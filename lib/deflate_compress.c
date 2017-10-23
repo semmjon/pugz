@@ -468,14 +468,14 @@ struct deflate_output_bitstream
     unsigned bitcount;
 
     /* Pointer to the beginning of the output buffer.  */
-    u8* begin;
+    byte* begin;
 
     /* Pointer to the position in the output buffer at which the next byte
      * should be written.  */
-    u8* next;
+    byte* next;
 
     /* Pointer just past the end of the output buffer.  */
-    u8* end;
+    byte* end;
 };
 
 /*
@@ -492,7 +492,7 @@ struct deflate_output_bitstream
 /* Initialize the output bitstream.  'size' is assumed to be at least
  * OUTPUT_END_PADDING.  */
 static void
-deflate_init_output(struct deflate_output_bitstream* os, void* buffer, size_t size)
+deflate_init_output(struct deflate_output_bitstream* os, byte* buffer, size_t size)
 {
     os->bitbuf   = 0;
     os->bitcount = 0;
@@ -514,21 +514,11 @@ deflate_add_bits(struct deflate_output_bitstream* os, const bitbuf_t bits, const
 static forceinline void
 deflate_flush_bits(struct deflate_output_bitstream* os)
 {
-    if (UNALIGNED_ACCESS_IS_FAST) {
-        /* Flush a whole word (branchlessly).  */
-        put_unaligned_leword(os->bitbuf, os->next);
-        os->bitbuf >>= os->bitcount & ~7;
-        os->next += MIN(os->end - os->next, os->bitcount >> 3);
-        os->bitcount &= 7;
-    } else {
-        /* Flush a byte at a time.  */
-        while (os->bitcount >= 8) {
-            *os->next = os->bitbuf;
-            if (os->next != os->end) os->next++;
-            os->bitcount -= 8;
-            os->bitbuf >>= 8;
-        }
-    }
+    /* Flush a whole word (branchlessly).  */
+    put_unaligned_leword(os->bitbuf, os->next);
+    os->bitbuf >>= os->bitcount & ~7;
+    os->next += MIN(os->end - os->next, os->bitcount >> 3);
+    os->bitcount &= 7;
 }
 
 /* Align the bitstream on a byte boundary. */
@@ -550,7 +540,7 @@ deflate_flush_output(struct deflate_output_bitstream* os)
         return 0;
 
     while ((int)os->bitcount > 0) {
-        *os->next++ = os->bitbuf;
+        *os->next++ = byte(os->bitbuf);
         os->bitcount -= 8;
         os->bitbuf >>= 8;
     }
@@ -646,7 +636,7 @@ heap_sort(u32 A[], unsigned length)
  * the number of symbols that have nonzero frequency.
  */
 static unsigned
-sort_symbols(unsigned num_syms, const u32 freqs[restrict], u8 lens[restrict], u32 symout[restrict])
+sort_symbols(unsigned num_syms, const u32 restrict freqs[], u8 restrict lens[], u32 restrict symout[])
 {
     unsigned sym;
     unsigned i;
@@ -828,7 +818,7 @@ build_tree(u32 A[], unsigned sym_count)
  *	The maximum permissible codeword length.
  */
 static void
-compute_length_counts(u32 A[restrict], unsigned root_idx, unsigned len_counts[restrict], unsigned max_codeword_len)
+compute_length_counts(u32 restrict A[], unsigned root_idx, unsigned int* restrict len_counts, unsigned max_codeword_len)
 {
     unsigned len;
     int      node;
@@ -918,11 +908,11 @@ compute_length_counts(u32 A[restrict], unsigned root_idx, unsigned len_counts[re
  *	frequency.  This is the length of the 'A' and 'len' arrays.
  */
 static void
-gen_codewords(u32            A[restrict],
-              u8             lens[restrict],
-              const unsigned len_counts[restrict],
-              unsigned       max_codeword_len,
-              unsigned       num_syms)
+gen_codewords(u32 restrict A[],
+              u8 restrict         lens[],
+              const unsigned int* restrict len_counts,
+              unsigned                     max_codeword_len,
+              unsigned                     num_syms)
 {
     u32      next_codewords[DEFLATE_MAX_CODEWORD_LEN + 1];
     unsigned i;
@@ -1062,11 +1052,11 @@ gen_codewords(u32            A[restrict],
  * by Igor Pavlov.
  */
 static void
-make_canonical_huffman_code(unsigned  num_syms,
-                            unsigned  max_codeword_len,
-                            const u32 freqs[restrict],
-                            u8        lens[restrict],
-                            u32       codewords[restrict])
+make_canonical_huffman_code(unsigned   num_syms,
+                            unsigned   max_codeword_len,
+                            const u32* restrict freqs,
+                            u8* restrict lens,
+                            u32* restrict codewords)
 {
     u32*     A = codewords;
     unsigned num_used_syms;

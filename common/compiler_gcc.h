@@ -95,10 +95,6 @@
 #    define bswap64 __builtin_bswap64
 #endif
 
-#if defined(__x86_64__) || defined(__i386__) || defined(__ARM_FEATURE_UNALIGNED)
-#    define UNALIGNED_ACCESS_IS_FAST 1
-#endif
-
 /* With gcc, we can access unaligned memory through 'packed' structures. */
 #define DEFINE_UNALIGNED_TYPE(type)                                                                                    \
                                                                                                                        \
@@ -107,9 +103,15 @@
         type v;                                                                                                        \
     } __attribute__((packed));                                                                                         \
                                                                                                                        \
-    static forceinline type load_##type##_unaligned(const void* p) { return ((const struct type##unaligned*)p)->v; }   \
+    static forceinline type load_##type##_unaligned(const void* p)                                                     \
+    {                                                                                                                  \
+        return static_cast<const struct type##unaligned*>(p)->v;                                                       \
+    }                                                                                                                  \
                                                                                                                        \
-    static forceinline void store_##type##_unaligned(type v, void* p) { ((struct type##unaligned*)p)->v = v; }
+    static forceinline void store_##type##_unaligned(type v, void* p)                                                  \
+    {                                                                                                                  \
+        static_cast<struct type##unaligned*>(p)->v = v;                                                                \
+    }
 
 #define bsr32(n) (31 - __builtin_clz(n))
 #define bsr64(n) (63 - __builtin_clzll(n))

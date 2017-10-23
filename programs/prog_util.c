@@ -56,7 +56,7 @@
 #endif
 
 /* The invocation name of the program (filename component only) */
-const tchar* program_invocation_name;
+const tchar* _program_invocation_name;
 
 static void
 do_msg(const char* format, bool with_errno, va_list va)
@@ -93,16 +93,6 @@ msg_errno(const char* format, ...)
     va_start(va, format);
     do_msg(format, true, va);
     va_end(va);
-}
-
-/* malloc() wrapper */
-void*
-xmalloc(size_t size)
-{
-    void* p = malloc(size);
-    if (p == NULL && size == 0) p = malloc(1);
-    if (p == NULL) msg("Out of memory");
-    return p;
 }
 
 /*
@@ -185,10 +175,9 @@ get_filename(const tchar* path)
 static tchar*
 quote_path(const tchar* path)
 {
-    size_t len = tstrlen(path);
-    tchar* result;
+    size_t len    = tstrlen(path);
+    tchar* result = new tchar[1 + len + 1 + 1];
 
-    result = xmalloc((1 + len + 1 + 1) * sizeof(tchar));
     if (result == NULL) return NULL;
     result[0] = '"';
     tmemcpy(&result[1], path, len);
@@ -222,7 +211,7 @@ xopen_for_read(const tchar* path, bool symlink_ok, struct file_stream* strm)
     strm->fd = topen(path, O_RDONLY | O_BINARY | O_NONBLOCK | O_NOCTTY | (symlink_ok ? 0 : O_NOFOLLOW) | O_SEQUENTIAL);
     if (strm->fd < 0) {
         msg_errno("Can't open %" TS " for reading", strm->name);
-        free(strm->name);
+        delete strm->name;
         return -1;
     }
 
@@ -289,42 +278,36 @@ retry:
     return 0;
 
 err:
-    free(strm->name);
+    delete strm->name;
     return ret;
 }
-
+#include <vector>
 /* Read the full contents of a file into memory */
 static int
 read_full_contents(struct file_stream* strm)
 {
-    size_t filled   = 0;
-    size_t capacity = 4096;
-    char*  buf;
-    int    ret;
+    size_t            filled   = 0;
+    size_t            capacity = 4096;
+    std::vector<char> buf;
+    int               ret;
 
-    buf = xmalloc(capacity);
-    if (buf == NULL) return -1;
+    buf.resize(capacity);
     do {
         if (filled == capacity) {
-            char* newbuf;
-
             if (capacity == SIZE_MAX) goto oom;
             capacity += MIN(SIZE_MAX - capacity, capacity);
-            newbuf = realloc(buf, capacity);
-            if (newbuf == NULL) goto oom;
-            buf = newbuf;
+            buf.resize(capacity);
         }
         ret = xread(strm, &buf[filled], capacity - filled);
         if (ret < 0) goto err;
         filled += ret;
     } while (ret != 0);
 
-    strm->mmap_mem  = buf;
+    strm->mmap_mem  = &buf[0];
     strm->mmap_size = filled;
     return 0;
 
 err:
-    free(buf);
     return ret;
 oom:
     msg("Out of memory!  %" TS " is too large to be processed by "
@@ -394,7 +377,7 @@ map_file_contents(struct file_stream* strm, u64 size)
 ssize_t
 xread(struct file_stream* strm, void* buf, size_t count)
 {
-    char*  p          = buf;
+    char*  p          = static_cast<char*>(buf);
     size_t orig_count = count;
 
     while (count != 0) {
@@ -415,7 +398,7 @@ xread(struct file_stream* strm, void* buf, size_t count)
 int
 full_write(struct file_stream* strm, const void* buf, size_t count)
 {
-    const char* p = buf;
+    const char* p = static_cast<const char*>(buf);
 
     while (count != 0) {
         ssize_t res = write(strm->fd, p, MIN(count, INT_MAX));
@@ -440,7 +423,7 @@ xclose(struct file_stream* strm)
             msg_errno("Error closing %" TS, strm->name);
             ret = -1;
         }
-        free(strm->name);
+        delete strm->name;
     }
 
     if (strm->mmap_token != NULL) {
@@ -458,47 +441,6 @@ xclose(struct file_stream* strm)
     strm->fd       = -1;
     strm->name     = NULL;
     return ret;
-}
-
-/*
- * Parse the compression level given on the command line, returning the
- * compression level on success or 0 on error
- */
-int
-parse_compression_level(tchar opt_char, const tchar* arg)
-{
-    unsigned long level = opt_char - '0';
-    const tchar*  p;
-
-    if (arg == NULL) arg = T("");
-
-    for (p = arg; *p >= '0' && *p <= '9'; p++)
-        level = (level * 10) + (*p - '0');
-
-    if (level < 1 || level > 12 || *p != '\0') {
-        msg("Invalid compression level: \"%" TC "%" TS "\".  "
-            "Must be an integer in the range [1, 12].",
-            opt_char,
-            arg);
-        return 0;
-    }
-
-    return level;
-}
-
-/* Allocate a new DEFLATE compressor */
-struct libdeflate_compressor*
-alloc_compressor(int level)
-{
-    struct libdeflate_compressor* c;
-
-    c = libdeflate_alloc_compressor(level);
-    if (c == NULL) {
-        msg_errno("Unable to allocate compressor with "
-                  "compression level %d",
-                  level);
-    }
-    return c;
 }
 
 /* Allocate a new DEFLATE decompressor */

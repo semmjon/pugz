@@ -69,8 +69,8 @@ tgetopt(int argc, tchar* argv[], const tchar* optstring)
             }
         } else {
             /* More short options in previous arg */
-            tchar  opt = *nextchar;
-            tchar* p   = tstrchr(optstring, opt);
+            tchar        opt = *nextchar;
+            const tchar* p   = tstrchr(optstring, opt);
             if (p == NULL) {
                 if (topterr) msg("invalid option -- '%" TC "'", opt);
                 toptopt = opt;
