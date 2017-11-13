@@ -11,7 +11,12 @@
 
 #include <cstddef>
 #include <cstdint>
+
+#ifdef __cpp_lib_byte
 using byte = std::byte;
+#else
+using byte = unsigned char;
+#endif
 
 /*
  * On Windows, if you want to link to the DLL version of libdeflate, then
