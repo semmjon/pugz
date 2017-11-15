@@ -44,9 +44,10 @@ struct options
     bool         force;
     bool         keep;
     const tchar* suffix;
+    int          skip;
 };
 
-static const tchar* const optstring = T("1::2::3::4::5::6::7::8::9::cdfhknS:V");
+static const tchar* const optstring = T("1::2::3::4::5::6::7::8::9::cdfhknS:s:V");
 
 static void
 show_usage(FILE* fp)
@@ -65,6 +66,7 @@ show_usage(FILE* fp)
             "  -h        print this help\n"
             "  -k        don't delete input files\n"
             "  -S SUF    use suffix SUF instead of .gz\n"
+            "  -s BYTES  skip BYTES of compressed data and attempt to decompress the rest\n"
             "  -V        show version and legal information\n",
             program_invocation_name);
 }
@@ -113,7 +115,7 @@ load_u32_gzip(const byte* p)
 }
 
 static int
-do_decompress(struct libdeflate_decompressor* decompressor, struct file_stream* in, struct file_stream* out)
+do_decompress(struct libdeflate_decompressor* decompressor, struct file_stream* in, struct file_stream* out, int skip)
 {
     const byte*            compressed_data   = static_cast<const byte*>(in->mmap_mem);
     size_t                 compressed_size   = in->mmap_size;
@@ -140,7 +142,7 @@ do_decompress(struct libdeflate_decompressor* decompressor, struct file_stream* 
     }
 
     result = libdeflate_gzip_decompress(
-      decompressor, compressed_data, compressed_size, uncompressed_data, uncompressed_size, NULL);
+      decompressor, compressed_data, compressed_size, uncompressed_data, uncompressed_size, NULL, skip);
 
     if (result == LIBDEFLATE_INSUFFICIENT_SPACE) {
         msg("%" TS ": file corrupt or too large to be processed by this "
@@ -308,7 +310,7 @@ decompress_file(struct libdeflate_decompressor* decompressor, const tchar* path,
     ret = map_file_contents(&in, stbuf.st_size);
     if (ret != 0) goto out_close_out;
 
-    ret = do_decompress(decompressor, &in, &out);
+    ret = do_decompress(decompressor, &in, &out, options->skip);
     if (ret != 0) goto out_close_out;
 
     if (oldpath != NULL && newpath != NULL) restore_metadata(&out, newpath, &stbuf);
@@ -341,6 +343,7 @@ tmain(int argc, tchar* argv[])
     options.force     = false;
     options.keep      = false;
     options.suffix    = T(".gz");
+    options.skip      = 0;
 
     while ((opt_char = tgetopt(argc, argv, optstring)) != -1) {
         switch (opt_char) {
@@ -362,6 +365,10 @@ tmain(int argc, tchar* argv[])
                     msg("invalid suffix");
                     return 1;
                 }
+                break;
+            case 's':
+                options.skip = atoi(toptarg);
+                fprintf(stderr, "skipping %d bytes (experimental)\n", options.skip);
                 break;
             case 'V': show_version(); return 0;
             default: show_usage(stderr); return 1;
