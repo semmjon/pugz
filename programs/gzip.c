@@ -40,14 +40,16 @@
 
 struct options
 {
-    bool         to_stdout;
-    bool         force;
-    bool         keep;
-    const tchar* suffix;
-    int          skip;
+    bool             to_stdout;
+    bool             force;
+    bool             keep;
+    const tchar*     suffix;
+    int              skip;
+    signed long long record;
+    signed long long until;
 };
 
-static const tchar* const optstring = T("1::2::3::4::5::6::7::8::9::cdfhknS:s:V");
+static const tchar* const optstring = T("1::2::3::4::5::6::7::8::9::cdfhknS:s:r:u:V");
 
 static void
 show_usage(FILE* fp)
@@ -66,7 +68,9 @@ show_usage(FILE* fp)
             "  -h        print this help\n"
             "  -k        don't delete input files\n"
             "  -S SUF    use suffix SUF instead of .gz\n"
-            "  -s BYTES  skip BYTES of compressed data and attempt to decompress the rest\n"
+            "  -s BYTES  skip BYTES of compressed data, then skip 20 blocks, then decompress the rest\n"
+            "  -r BYTES  record the next 20 blocks starting after position BYTES in compressed data\n"
+            "  -u BYTES  stop 20 block after position BYTES in compressed data\n"
             "  -V        show version and legal information\n",
             program_invocation_name);
 }
@@ -115,7 +119,12 @@ load_u32_gzip(const byte* p)
 }
 
 static int
-do_decompress(struct libdeflate_decompressor* decompressor, struct file_stream* in, struct file_stream* out, int skip)
+do_decompress(struct libdeflate_decompressor* decompressor,
+              struct file_stream*             in,
+              struct file_stream*             out,
+              int                             skip,
+              signed long long                record,
+              signed long long                until)
 {
     const byte*            compressed_data   = static_cast<const byte*>(in->mmap_mem);
     size_t                 compressed_size   = in->mmap_size;
@@ -142,7 +151,7 @@ do_decompress(struct libdeflate_decompressor* decompressor, struct file_stream* 
     }
 
     result = libdeflate_gzip_decompress(
-      decompressor, compressed_data, compressed_size, uncompressed_data, uncompressed_size, NULL, skip);
+      decompressor, compressed_data, compressed_size, uncompressed_data, uncompressed_size, NULL, skip, record, until);
 
     if (result == LIBDEFLATE_INSUFFICIENT_SPACE) {
         msg("%" TS ": file corrupt or too large to be processed by this "
@@ -310,7 +319,7 @@ decompress_file(struct libdeflate_decompressor* decompressor, const tchar* path,
     ret = map_file_contents(&in, stbuf.st_size);
     if (ret != 0) goto out_close_out;
 
-    ret = do_decompress(decompressor, &in, &out, options->skip);
+    ret = do_decompress(decompressor, &in, &out, options->skip, options->record, options->until);
     if (ret != 0) goto out_close_out;
 
     if (oldpath != NULL && newpath != NULL) restore_metadata(&out, newpath, &stbuf);
@@ -344,6 +353,8 @@ tmain(int argc, tchar* argv[])
     options.keep      = false;
     options.suffix    = T(".gz");
     options.skip      = 0;
+    options.record    = -1;
+    options.until     = -1;
 
     while ((opt_char = tgetopt(argc, argv, optstring)) != -1) {
         switch (opt_char) {
@@ -370,6 +381,15 @@ tmain(int argc, tchar* argv[])
                 options.skip = atoi(toptarg);
                 fprintf(stderr, "skipping %d bytes (experimental)\n", options.skip);
                 break;
+            case 'r':
+                options.record = atoi(toptarg);
+                fprintf(stderr, "recording 20 blocks after compressed position %lld\n", options.record);
+                break;
+            case 'u':
+                options.until = atoi(toptarg);
+                fprintf(stderr, "decoding until 20 blocks after compressed position %lld\n", options.until);
+                break;
+
             case 'V': show_version(); return 0;
             default: show_usage(stderr); return 1;
         }
