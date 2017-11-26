@@ -130,6 +130,7 @@ do_decompress(struct libdeflate_decompressor* decompressor,
     size_t                 compressed_size   = in->mmap_size;
     byte*                  uncompressed_data = NULL;
     size_t                 uncompressed_size;
+    size_t                 actual_uncompressed_size = 0; // in case we decompress less
     enum libdeflate_result result;
     int                    ret;
 
@@ -150,8 +151,15 @@ do_decompress(struct libdeflate_decompressor* decompressor,
         goto out;
     }
 
-    result = libdeflate_gzip_decompress(
-      decompressor, compressed_data, compressed_size, uncompressed_data, uncompressed_size, NULL, skip, record, until);
+    result = libdeflate_gzip_decompress(decompressor,
+                                        compressed_data,
+                                        compressed_size,
+                                        uncompressed_data,
+                                        uncompressed_size,
+                                        &actual_uncompressed_size,
+                                        skip,
+                                        record,
+                                        until);
 
     if (result == LIBDEFLATE_INSUFFICIENT_SPACE) {
         msg("%" TS ": file corrupt or too large to be processed by this "
@@ -167,7 +175,7 @@ do_decompress(struct libdeflate_decompressor* decompressor,
         goto out;
     }
 
-    ret = full_write(out, uncompressed_data, uncompressed_size);
+    ret = full_write(out, uncompressed_data, actual_uncompressed_size);
 out:
     delete uncompressed_data;
     return ret;
@@ -381,10 +389,7 @@ tmain(int argc, tchar* argv[])
                 options.skip = atoi(toptarg);
                 fprintf(stderr, "skipping %d bytes (experimental)\n", options.skip);
                 break;
-            case 'r':
-                options.record = atoi(toptarg);
-                fprintf(stderr, "recording 20 blocks after compressed position %lld\n", options.record);
-                break;
+            case 'r': options.record = atoi(toptarg); break;
             case 'u':
                 options.until = atoi(toptarg);
                 fprintf(stderr, "decoding until 20 blocks after compressed position %lld\n", options.until);
