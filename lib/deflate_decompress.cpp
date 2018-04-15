@@ -49,6 +49,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <fstream>
+#include <vector>
+#include <string>
 
 #include <stdexcept>
 
@@ -1238,6 +1240,7 @@ class DeflateWindow
       : has_dummy_32k(true)
       , output_to_target(true)
       , nb_bytes_output(0)
+      , fully_reconstructed(false)
       , target(target)
       , target_end(target_end)
       , buffer(new byte[1 << window_bits])
@@ -1413,6 +1416,8 @@ class DeflateWindow
      * note: not necessarily at the end of a block */
     bool flush()
     {
+        bool debug = false;
+
         assert(next >= current_blk);
 
         // Keep 32K of context, or the current unfinished block
@@ -1443,11 +1448,12 @@ class DeflateWindow
             assert(buffer + evict_size == next - keep_size);
 
             // printf("shard of 0x%06lx bytes and %d blocks required 0x%04lx bytes context\n",
-            fprintf(stderr,
-                    "shard of %6ld bytes and %d blocks required %4ld bytes context\n", // i like decimals
-                    current_blk - first_blk,
-                    blk_count,
-                    first_blk - first_ref); // Rayan: i don't understand this first_blk-first_ref
+            if (debug)
+                fprintf(stderr,
+                        "shard of %6ld bytes and %d blocks required %4ld bytes context\n", // i like decimals
+                        current_blk - first_blk,
+                        blk_count,
+                        first_blk - first_ref); // Rayan: i don't understand this first_blk-first_ref
 
             if (has_dummy_32k) evict_size -= (1 << 15);
             if (output_to_target) {
@@ -1507,7 +1513,7 @@ class DeflateWindow
     // anyhow, this function could be vastly improved by penalizing non-ACTG chars
     bool check_buffer_fastq(bool previously_aligned)
     {
-        if (next - buffer < (1 << 15)) return true; // block too small, nothing to do
+        if (next - buffer < (1 << 15)) return false; // block too small, nothing to do
 
         int nb_A = 0, nb_T = 0, nb_C = 0, nb_G = 0, nb_N = 0;
         PRINT_DEBUG(
@@ -1542,13 +1548,94 @@ class DeflateWindow
     }
 
     // decide if the buffer contains all the fastq sequences with no ambiguities in them
-    bool check_fully_reconstructed_sequences()
+    void check_fully_reconstructed_sequences()
     {
-        // this is my major TODO (rayan).
-        bool res = true;
+        if (next - buffer < (1 << 15)) {
+            fprintf(stderr, "not enough context to check context. should that happen?\n");
+            return; // block too small, nothing to do
+        }
+
+        // when this function is called, we're at the start of a block, so here's the context start
+        long int start_pos = next - (1 << 15) - buffer;
+
+        // get_sequences_between_separators(); inlined
+        std::vector<std::string> putative_sequences;
+        std::string              current_sequence = "";
+        for (long int i = start_pos; i < next - buffer; i++) {
+            unsigned char c = buffer[i];
+            if (c == 'A' || c == 'T' || c == 'N' || c == 'G' || c == 'C' || c == 'a' || c == 't' || c == 'n' || c == 'g'
+                || c == 'c')
+                current_sequence += c;
+            else {
+                if (((c == '\r' || c == '\n') || (buffer_counts[i] > 1000))
+                    && (current_sequence.size() > 30)) // heuristics here, assume reads at > 30 bp
+                {
+                    putative_sequences.push_back(current_sequence);
+                    // note this code may capture stretches of quality values too
+                }
+                current_sequence = "";
+            }
+        }
+        if (current_sequence.size() > 30) putative_sequences.push_back(current_sequence);
+
+        // get_sequences_length_histogram(); inlined
+        // first get maximum histogram length
+        int max_histogram = 0;
+        for (auto seq : putative_sequences)
+            max_histogram = std::max(max_histogram, (int)(seq.size()));
+
+        max_histogram++; // important, because we'll iterate and allocate array with numbers up to this bound
+
+        if (max_histogram > 10000)
+            fprintf(stderr,
+                    "warning: maximum putative read length %d, not supposed to happen if we have short reads",
+                    max_histogram);
+
+        // init histogram
+        std::vector<int> histogram(max_histogram);
+        for (int i = 0; i < max_histogram; i++)
+            histogram[i] = 0;
+
+        // populate it
+        for (auto seq : putative_sequences)
+            histogram[seq.size()] += 1;
+
+        // compute sum
+        int nb_reads = 0;
+        for (int i = 0; i < max_histogram; i++)
+            nb_reads += histogram[i];
+
+        // heuristic: check that all sequences are concentrated in a single value (assumes that all reads have same read
+        // length) allows for beginning and end of block reads to be truncated, so - 1
+        bool res     = false;
+        int  readlen = 0;
+        for (int len = 1; len < max_histogram; len++) {
+            if (histogram[len] >= nb_reads - 2) {
+                // heuristic: compute a lower bound on  number of reads in that context
+                // assumes that fastq file size is at most 4x the size of sequences
+                int min_nb_reads = (1 << 15) / (4 * len);
+                if (nb_reads < min_nb_reads) break;
+
+                res     = true;
+                readlen = len;
+            }
+        }
+
         pretty_print();
-        fprintf(stderr, "check_fully_reconstructed status: %s \n", res ? "fully reconstructed" : "incomplete");
-        return res; // for now i don't know how to implement this reliably, so for now it returns incomplete windows
+        fprintf(stderr, "check_fully_reconstructed status: total buffer size %d, ", (int)(next - buffer));
+        if (res)
+            fprintf(
+              stderr, "fully reconstructed %d reads of length %d\n", nb_reads, readlen); // continuation of heuristic
+        else
+            fprintf(stderr, "incomplete, %d reads\n ", nb_reads);
+
+        if (res == false) {
+            for (int i = 0; i < max_histogram; i++) {
+                if (histogram[i] > 0) fprintf(stderr, "histogram[%d]=%d ", i, histogram[i]);
+            }
+            fprintf(stderr, "\n");
+        }
+        fully_reconstructed = res;
     }
 
     void backup(DeflateWindow& other)
@@ -1583,8 +1670,8 @@ class DeflateWindow
     bool has_dummy_32k;    // flag whether the window contains the initial dummy 32k context
     bool output_to_target; // flag whether, during a flush, window content should be copied to target or discarded (when
                            // scanning the first 20 blocks)
-    int nb_bytes_output;
-
+    int  nb_bytes_output;
+    bool fully_reconstructed; // flag to say whether context is fully reconstructed (heuristic)
   protected:
     byte*       target;
     const byte* target_end;
@@ -1824,8 +1911,9 @@ void
 handle_skip(int& skip_counter, DeflateWindow& out_window)
 {
     if (skip_counter > 0) skip_counter--;
-    if (skip_counter == 0 && out_window.check_fully_reconstructed_sequences()) {
-        out_window.flush();                 // re-initialize the window with just a context and no other block data
+    if (skip_counter == 0 && out_window.fully_reconstructed) {
+        out_window.flush(); // re-initialize the window with just a context and no other block data // TODO not sure if
+                            // that should be placed here or outside if
         out_window.output_to_target = true; // the next block and so on will be output to "out"
     }
 }
@@ -1849,11 +1937,16 @@ libdeflate_deflate_decompress(struct libdeflate_decompressor* restrict d,
     byte* const   out_end  = out_next + out_nbytes_avail;
     DeflateWindow out_window(out, out_end);
     DeflateWindow backup_out(out, out_end);
-    int           failed_decomp_counter = 0;
-    signed int    recording             = -1;
-    signed int    until_counter         = -1;
-    int           skip_counter          = 0;
-    int           nb_to_record          = 2000;
+
+    // blocks counter
+    int      failed_decomp_counter = 0;
+    uint64_t decoded_blocks        = 0;
+
+    // handle skipping/recording
+    signed int recording     = -1;
+    signed int until_counter = -1;
+    int        skip_counter  = 0;
+    int        nb_to_record  = 100;
 
     /* Skipping user-set amount of bytes, after the header of course */
     if (skip) {
@@ -1880,10 +1973,11 @@ libdeflate_deflate_decompress(struct libdeflate_decompressor* restrict d,
         went_fine &= out_window.check_buffer_fastq(aligned); // this is a check that the block is indeed FASTQ-looking
 
         if (went_fine) {
+            decoded_blocks++;
             aligned = true; // found a way to fully decompress a block, seems that we're good
 
-            fprintf(stderr, "block decompressed!\n"); //, out_window.buffer);
-            failed_decomp_counter = 0;                // reset failed block counter
+            // fprintf(stderr,"block decompressed!\n");//, out_window.buffer);
+            failed_decomp_counter = 0; // reset failed block counter
 
             long long position = in_stream.position();
 
@@ -1891,6 +1985,11 @@ libdeflate_deflate_decompress(struct libdeflate_decompressor* restrict d,
             if (handle_until(until, until_counter, position)) break;
             handle_skip(skip_counter, out_window);
 
+            if (skip_counter == 0 && out_window.fully_reconstructed == false) {
+                out_window.check_fully_reconstructed_sequences(); // see if we have uncertainties in nucleotides
+                if (out_window.fully_reconstructed)
+                    fprintf(stderr, "successfully decoded reads at decoded block %d\n", decoded_blocks);
+            }
         } else {
             if (aligned) {
                 fprintf(stderr, "unexpected error, bad block after we thought we had found a correct one\n");
