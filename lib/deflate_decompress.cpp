@@ -59,9 +59,11 @@
 
 #include "libdeflate.h"
 
+//#define PRINT_DEBUG(...) {}
 #define PRINT_DEBUG(...)                                                                                               \
-    {}
-//#define PRINT_DEBUG(...) {fprintf(stderr, __VA_ARGS__);}
+    {                                                                                                                  \
+        fprintf(stderr, __VA_ARGS__);                                                                                  \
+    }
 #define DEBUG_FIRST_BLOCK(x)                                                                                           \
     {}
 //#define DEBUG_FIRST_BLOCK(x) {x}
@@ -201,9 +203,8 @@ class InputStream
     size_t      bitsleft; /// Number of valid bits in the bit buffer
     size_t      overrun_count;
     const byte* begin;
-    const byte* /*restrict (FIXME: Rayan had to comment that, in the code that calls do_block)*/
-                                          in_next; /// Read pointer
-    const byte* /*restrict (same) const*/ in_end;  /// Adress of the byte after input
+    const byte* restrict in_next;          /// Read pointer
+    const byte* restrict /*const*/ in_end; /// Adress of the byte after input
 
     /**
      * Fill the bitbuffer variable by reading the next word from the input buffer.
@@ -1083,14 +1084,6 @@ copy_word_unaligned(const void* src, void* dst)
  *                         Main decompression routine
  *****************************************************************************/
 
-class DeflateException : public std::runtime_error
-{
-  public:
-    DeflateException(enum libdeflate_result)
-      : runtime_error("DeflateException")
-    {}
-};
-
 bool
 prepare_dynamic(struct libdeflate_decompressor* restrict d, InputStream& in_stream)
 {
@@ -1231,7 +1224,7 @@ prepare_static(struct libdeflate_decompressor* restrict d)
     return true;
 }
 
-#define window_bits 20
+#define window_bits 20 // FIXME: constructor parameter
 
 /**
  * @brief A window of the size of one decoded shard (some deflate blocks) plus it's 32K context
@@ -1268,7 +1261,6 @@ class DeflateWindow
 
         blk_count   = 0;
         current_blk = next;
-        first_ref   = next;
         first_blk   = next;
     }
 
@@ -1276,41 +1268,23 @@ class DeflateWindow
 
     unsigned available() const { return buffer_end - next; }
 
-    bool push(byte c)
+    void push(byte c)
     {
         DEBUG_FIRST_BLOCK(if (c > ' ' && c < '}') fprintf(stderr, "literal %c\n", c);)
+        assert(available() >= 1);
 
-        if (!(next < buffer_end)) {
-            PRINT_DEBUG("window buffer overflow: %d/%d", size(), 1 << window_bits);
-            return false;
-        }
         buffer_counts[next - buffer] = 0;
         *next++                      = c;
-        return true;
     }
 
     /* return true if it's a reasonable offset, otherwise false */
-    bool copy_match(unsigned length, unsigned offset, bool debug)
+    void copy_match(unsigned length, unsigned offset)
     {
-        // if (debug) fprintf(stderr,"want to copy match of length %d, offset %d (window size
-        // %d)\n",(int)length,(int)offset, size());
         /* The match source must not begin before the beginning of the
          * output buffer.  */
-        if (!(offset <= size())) {
-            PRINT_DEBUG("fail, copy_match, offset %d (window size %d)\n", (int)offset, size());
-            return false;
-        }
-        if (!(available() >= length)) {
-            PRINT_DEBUG("fail, copy_match, length too large\n");
-            return false;
-        }
-        if (!(offset > 0)) {
-            PRINT_DEBUG("fail, copy_match, offset 0\n");
-            return false;
-        }
-
-        // update first_ref for our records
-        if (unlikely(first_ref > next - offset)) { first_ref = next - offset; }
+        assert(offset <= size());
+        assert(available() >= length);
+        assert(offset > 0);
 
         if (length <= (3 * WORDBYTES) && offset >= WORDBYTES && length + (3 * WORDBYTES) <= buffer_end - next) {
             /* Fast case: short length, no overlaps if we copy one
@@ -1367,17 +1341,8 @@ class DeflateWindow
 
         nb_back_refs_in_block++;
         len_back_refs_in_block += length;
-        return true;
-    }
 
-    // record into a dedicated buffer that store counts of back references
-    void record_match(unsigned length, unsigned offset)
-    {
-
-        const byte* src = next - offset;
-        for (unsigned int i = 0; i < length; i++) {
-            buffer_counts[next + i - buffer] = ++buffer_counts[src - buffer + i];
-        }
+        {}
     }
 
     void copy(InputStream& in, unsigned length)
@@ -1387,56 +1352,14 @@ class DeflateWindow
         next += length;
     }
 
-    // debug only
-    unsigned dump(byte* const dst)
-    {
-        memcpy(dst, buffer, size());
-        return next - buffer;
-    }
-
-    void pretty_print()
-    {
-        const char* KNRM = "\x1B[0m";
-        const char* KRED = "\x1B[31m";
-        const char* KGRN = "\x1B[32m";
-        const char* KYEL = "\x1B[33m"; /*
-        const char*  KBLU = "\x1B[34m";
-        const char*  KMAG = "\x1B[35m";
-        const char*  KCYN = "\x1B[36m";
-        const char*  KWHT = "\x1B[37m";*/
-        fprintf(stderr, "%s about to print a window %s\n", KRED, KNRM);
-        unsigned int length = size();
-        for (unsigned int i = 0; i < length; i++) {
-            char const* color;
-            if (buffer_counts[i] < 10)
-                color = KNRM;
-            else {
-                if (buffer_counts[i] < 100)
-                    color = KGRN;
-                else {
-                    if (buffer_counts[i] < 1000)
-                        color = KYEL;
-                    else
-                        color = KRED;
-                }
-            }
-            if (buffer[i] == '\n')
-                fprintf(stderr, "%s\\n%c%s", color, buffer[i], KNRM);
-            else
-                fprintf(stderr, "%s%c%s", color, buffer[i], KNRM);
-        }
-    }
-
     /* called when the window is full.
      * note: not necessarily at the end of a block */
-    bool flush()
+    void flush()
     {
-        bool debug = false;
-
         assert(next >= current_blk);
 
         // Keep 32K of context, or the current unfinished block
-        const size_t keep_size = std::max((size_t)1 << 15, (size_t)(next - current_blk));
+        const size_t keep_size = std::max(1UL << 15, size_t(next - current_blk));
         if (size() > keep_size) { // allways true, currently at least
             /* what's going to happen
              * buffer
@@ -1462,14 +1385,6 @@ class DeflateWindow
             size_t evict_size = size() - keep_size;
             assert(buffer + evict_size == next - keep_size);
 
-            // printf("shard of 0x%06lx bytes and %d blocks required 0x%04lx bytes context\n",
-            if (debug)
-                fprintf(stderr,
-                        "shard of %6ld bytes and %d blocks required %4ld bytes context\n", // i like decimals
-                        current_blk - first_blk,
-                        blk_count,
-                        first_blk - first_ref); // Rayan: i don't understand this first_blk-first_ref
-
             if (has_dummy_32k) evict_size -= (1 << 15);
             if (output_to_target) {
                 assert(target + evict_size < target_end);
@@ -1483,8 +1398,7 @@ class DeflateWindow
             assert(buffer + keep_size < next);
             memcpy(buffer, next - keep_size, keep_size);
             // update counts
-            for (unsigned int i = 0; i < keep_size; i++)
-                buffer_counts[i] = buffer_counts[next - keep_size + i - buffer];
+            memcpy(buffer_counts, buffer_counts + size() - keep_size, keep_size * sizeof(uint32_t));
             for (unsigned int i = keep_size; i < (1 << window_bits); i++)
                 buffer_counts[i] = 0;
             // update next pointer
@@ -1494,20 +1408,12 @@ class DeflateWindow
             current_blk -= evict_size;
             assert(current_blk >= buffer);
             first_blk = current_blk;
-            first_ref = first_blk;
         }
-        return true;
     }
 
     void final_flush()
     {
         assert(current_blk == next);
-        // printf("shard of 0x%06lx bytes and %d blocks required 0x%04lx bytes context\n",
-        fprintf(stderr,
-                "final shard of %6ld bytes and %d blocks required %4ld bytes context\n",
-                next - first_blk,
-                blk_count,
-                first_blk - first_ref);
 
         // assert(target + size() >= target_end); // Rayan:  I'm removing this assert because in the future, we won't
         // know the target_end (=uncompressed size)
@@ -1516,19 +1422,95 @@ class DeflateWindow
 
     void notify_end_block(bool is_final_block, InputStream& in_stream)
     {
-        PRINT_DEBUG(
-          fprintf(stderr,
-                  "block size was %ld bits left %ld overrun_count %lu nb back refs %u tot/average len %u/%.1f\n",
-                  next - current_blk,
-                  in_stream.bitsleft,
-                  in_stream.overrun_count,
-                  nb_back_refs_in_block,
-                  len_back_refs_in_block,
-                  1.0 * len_back_refs_in_block / nb_back_refs_in_block);)
+        PRINT_DEBUG("block size was %ld bits left %ld overrun_count %lu nb back refs %u tot/average len %u/%.1f\n",
+                    next - current_blk,
+                    in_stream.bitsleft,
+                    in_stream.overrun_count,
+                    nb_back_refs_in_block,
+                    len_back_refs_in_block,
+                    1.0 * len_back_refs_in_block / nb_back_refs_in_block);
         current_blk = next;
         blk_count++;
         nb_back_refs_in_block  = 0;
         len_back_refs_in_block = 0;
+    }
+
+    bool has_dummy_32k;    // flag whether the window contains the initial dummy 32k context
+    bool output_to_target; // flag whether, during a flush, window content should be copied to target or discarded (when
+                           // scanning the first 20 blocks)
+    int  nb_bytes_output;
+    bool fully_reconstructed; // flag to say whether context is fully reconstructed (heuristic)
+
+    // some back-references statistics
+    unsigned nb_back_refs_in_block;
+    unsigned len_back_refs_in_block;
+
+  protected:
+    byte*       target;
+    const byte* target_end;
+
+    unsigned blk_count;   /// Number of decoded blocks currently in the buffer
+    byte*    current_blk; /// Start position of the current block in the buffer
+    byte*    first_blk;   /// Start position of the block that is currently first in the buffer
+
+    byte /* const (FIXME, Rayan: same as InputStream*/* buffer; /// Allocated output buffer
+    uint32_t /* const (FIXME, Rayan: same as InputStream*/*
+                                                                buffer_counts; /// Allocated counts for keeping track of how many back references in the buffer
+    /*const*/ byte* /*const FIXME: Rayan, same as InputStream*/ buffer_end; /// Past the end pointer
+    byte*                                                       next;       /// Next byte to be written
+};
+
+class InstrDeflateWindow : public DeflateWindow
+{
+  public:
+    using DeflateWindow::DeflateWindow;
+
+    void backup(InstrDeflateWindow& other)
+    {
+        // TODO: could we only copy the 32K ?
+        memcpy(other.buffer, buffer, size());
+        memcpy(other.buffer_counts, buffer_counts, size() * sizeof(uint32_t));
+        other.next        = other.buffer + size();
+        other.first_blk   = other.buffer + (first_blk - buffer);
+        other.current_blk = other.buffer + (current_blk - buffer);
+        other.blk_count   = blk_count;
+    }
+
+    void restore(InstrDeflateWindow& other)
+    {
+        memcpy(buffer, other.buffer, other.size());
+        memcpy(buffer_counts, other.buffer_counts, other.size() * sizeof(uint32_t));
+        next      = buffer + other.size();
+        first_blk = buffer + (other.first_blk - other.buffer);
+        blk_count = other.blk_count;
+    }
+
+    // record into a dedicated buffer that store counts of back references
+    void record_match(unsigned length, unsigned offset)
+    {
+        for (unsigned int i = 0; i < length; i++)
+            buffer_counts[size() + i] = ++buffer_counts[size() + i - offset];
+    }
+
+    bool check_match(unsigned length, unsigned offset, bool debug)
+    {
+        // if (debug) fprintf(stderr,"want to copy match of length %d, offset %d (window size
+        // %d)\n",(int)length,(int)offset, size());
+        /* The match source must not begin before the beginning of the
+         * output buffer.  */
+        if (!(offset <= size())) {
+            PRINT_DEBUG("fail, copy_match, offset %d (window size %d)\n", (int)offset, size());
+            return false;
+        }
+        if (!(available() >= length)) {
+            PRINT_DEBUG("fail, copy_match, length too large\n");
+            return false;
+        }
+        if (!(offset > 0)) {
+            PRINT_DEBUG("fail, copy_match, offset 0\n");
+            return false;
+        }
+        return true;
     }
 
     // make sure the buffer contains at least something that looks like fastq
@@ -1538,7 +1520,7 @@ class DeflateWindow
     {
         int nb_A = 0, nb_T = 0, nb_C = 0, nb_G = 0, nb_N = 0;
         PRINT_DEBUG(
-          "potential good block, beginning fastq check, bounds %d %d\n", next - (1 << 15) - buffer, next - buffer);
+          "potential good block, beginning fastq check, bounds %ld %ld\n", next - (1 << 15) - buffer, next - buffer);
         // check the first 5K, mid 5K, last 5K
         int      check_size = 5000;
         long int pos[3]     = {next - (1 << 15) - buffer, next - (1 << 14) - buffer, next - check_size - buffer};
@@ -1663,28 +1645,6 @@ class DeflateWindow
         DEBUG_FIRST_BLOCK(exit(1);)
     }
 
-    void backup(DeflateWindow& other)
-    {
-        memcpy(other.buffer, buffer, size());
-        memcpy(other.buffer_counts, buffer_counts, size() * sizeof(uint32_t));
-        other.next        = other.buffer + (next - buffer);
-        other.first_blk   = other.buffer + (first_blk - buffer);
-        other.first_ref   = other.buffer + (first_ref - buffer);
-        other.current_blk = other.buffer + (current_blk - buffer);
-        other.blk_count   = blk_count;
-    }
-
-    void restore(DeflateWindow& other)
-    {
-        memcpy(buffer, other.buffer, other.size());
-        memcpy(buffer_counts, other.buffer_counts, other.size() * sizeof(uint32_t));
-        next        = buffer + (other.next - other.buffer);
-        first_blk   = buffer + (other.first_blk - other.buffer);
-        first_ref   = buffer + (other.first_ref - other.buffer);
-        current_blk = buffer + (other.current_blk - other.buffer);
-        blk_count   = other.blk_count;
-    }
-
     /* dump a block to disk. only works in "record" mode, because we make sure the window only contains 1 block */
     void dump_block(int i)
     {
@@ -1694,34 +1654,49 @@ class DeflateWindow
         block.close();
     }
 
-    bool has_dummy_32k;    // flag whether the window contains the initial dummy 32k context
-    bool output_to_target; // flag whether, during a flush, window content should be copied to target or discarded (when
-                           // scanning the first 20 blocks)
-    int  nb_bytes_output;
-    bool fully_reconstructed; // flag to say whether context is fully reconstructed (heuristic)
+    // debug only
+    unsigned dump(byte* const dst)
+    {
+        memcpy(dst, buffer, size());
+        return next - buffer;
+    }
 
-    // some back-references statistics
-    unsigned nb_back_refs_in_block;
-    unsigned len_back_refs_in_block;
-
-  protected:
-    byte*       target;
-    const byte* target_end;
-
-    unsigned blk_count;   /// Number of decoded blocks currently in the buffer
-    byte*    current_blk; /// Start position of the current block in the buffer
-    byte*    first_blk;   /// Start position of the block that is currently first in the buffer
-    byte*    first_ref;   /// First backref (just to keep track)
-
-    byte /* const (FIXME, Rayan: same as InputStream*/* buffer; /// Allocated output buffer
-    uint32_t /* const (FIXME, Rayan: same as InputStream*/*
-                                                                buffer_counts; /// Allocated counts for keeping track of how many back references in the buffer
-    /*const*/ byte* /*const FIXME: Rayan, same as InputStream*/ buffer_end; /// Past the end pointer
-    byte*                                                       next;       /// Next byte to be written
+    void pretty_print()
+    {
+        const char* KNRM = "\x1B[0m";
+        const char* KRED = "\x1B[31m";
+        const char* KGRN = "\x1B[32m";
+        const char* KYEL = "\x1B[33m"; /*
+        const char*  KBLU = "\x1B[34m";
+        const char*  KMAG = "\x1B[35m";
+        const char*  KCYN = "\x1B[36m";
+        const char*  KWHT = "\x1B[37m";*/
+        fprintf(stderr, "%s about to print a window %s\n", KRED, KNRM);
+        unsigned int length = size();
+        for (unsigned int i = 0; i < length; i++) {
+            char const* color;
+            if (buffer_counts[i] < 10)
+                color = KNRM;
+            else {
+                if (buffer_counts[i] < 100)
+                    color = KGRN;
+                else {
+                    if (buffer_counts[i] < 1000)
+                        color = KYEL;
+                    else
+                        color = KRED;
+                }
+            }
+            if (buffer[i] == '\n')
+                fprintf(stderr, "%s\\n%c%s", color, buffer[i], KNRM);
+            else
+                fprintf(stderr, "%s%c%s", color, buffer[i], KNRM);
+        }
+    }
 };
 
 bool
-do_uncompressed(InputStream& in_stream, DeflateWindow& out)
+do_uncompressed(InputStream& in_stream, InstrDeflateWindow& out)
 {
     /* Uncompressed block: copy 'len' bytes literally from the input
      * buffer to the output buffer.  */
@@ -1754,7 +1729,7 @@ do_uncompressed(InputStream& in_stream, DeflateWindow& out)
 bool
 do_block(struct libdeflate_decompressor* restrict d,
          InputStream&                             in_stream,
-         DeflateWindow&                           out,
+         InstrDeflateWindow&                      out,
          bool&                                    is_final_block,
          bool                                     aligned)
 {
@@ -1814,8 +1789,6 @@ do_block(struct libdeflate_decompressor* restrict d,
         // PRINT_DEBUG("in_stream position %x\n",in_stream.in_next);
         if (entry & HUFFDEC_LITERAL) {
             /* Literal  */
-
-            bool ret;
             if (unlikely(out.available() == 0)) {
                 if (out.has_dummy_32k) // if it's the first block, there is really no reason why buffer should already
                                        // be full
@@ -1824,23 +1797,19 @@ do_block(struct libdeflate_decompressor* restrict d,
                     return false;
                 }
                 fprintf(stderr, "flushing now\n");
-                ret = out.flush();
-                if (!ret) // overflowing the window is a sign of a bad block
+                out.flush();
+            }
+
+            if (unlikely(char(entry >> HUFFDEC_RESULT_SHIFT) > '~')) {
+                {
+                    PRINT_DEBUG("fail, unprintable literal unexpected in fastq\n");
                     return false;
-            }
+                }
 
-            // Mael's trick: fastq should contain only ASCII codes
-            if (byte(entry >> HUFFDEC_RESULT_SHIFT) > 127) {
-                PRINT_DEBUG("fail, unprintable literal unexpected in fastq\n");
                 return false;
             }
+            out.push(byte(entry >> HUFFDEC_RESULT_SHIFT));
 
-            ret = out.push(byte(entry >> HUFFDEC_RESULT_SHIFT));
-            if (!ret) // overflowing the window is a sign of a bad block
-            {
-                PRINT_DEBUG("fail, window overflow\n");
-                return false;
-            }
             // fprintf(stderr,"literal: %c\n",byte(entry >> HUFFDEC_RESULT_SHIFT)); // this is indeed the plaintext
             // decoded character, good to know
             continue;
@@ -1866,18 +1835,11 @@ do_block(struct libdeflate_decompressor* restrict d,
                 out.notify_end_block(is_final_block, in_stream);
                 return true; // Block done
             } else {
-                ret = out.flush();
-                if (!ret) return false;
-                if (!(!(length - 1 >= out.available()))) {
-                    PRINT_DEBUG("fail at (!(length - 1 >= out.available()))\n"); // shouldn't happen tho
-                    return false;
-                }
+                out.flush();
+                assert(length <= out.available());
             }
         }
-        if (!(length > 0)) {
-            PRINT_DEBUG("fail at length>0\n");
-            return false;
-        }
+        assert(length > 0); // length == 0 => EOB case was handled
 
         // if we end up here, it means we're at a match
 
@@ -1900,8 +1862,8 @@ do_block(struct libdeflate_decompressor* restrict d,
         /* Copy the match: 'length' bytes at 'out_next - offset' to
          * 'out_next'.  */
         out.record_match(length, offset);
-        bool ret = out.copy_match(length, offset, debug);
-        if (!ret) { return false; }
+        if (!out.check_match(length, offset, debug)) { return false; }
+        out.copy_match(length, offset);
     }
 
     out.notify_end_block(is_final_block, in_stream);
@@ -1910,11 +1872,11 @@ do_block(struct libdeflate_decompressor* restrict d,
 
 /* if we need to record blocks to disk, and we have not recorded yet, and it's time to record */
 void
-handle_recording(signed long long record,
-                 signed int&      recording,
-                 long long        position,
-                 DeflateWindow&   out_window,
-                 int              nb_to_record)
+handle_recording(signed long long    record,
+                 signed int&         recording,
+                 long long           position,
+                 InstrDeflateWindow& out_window,
+                 int                 nb_to_record)
 {
     if (record > -1 && recording == -1 && position > record) {
         recording = nb_to_record;
@@ -1947,7 +1909,7 @@ handle_until(signed long long until, signed int& until_counter, long long positi
  * - start outputting to target when we are sure that the buffer window contains fully resolved sequences
  */
 void
-handle_skip(int& skip_counter, DeflateWindow& out_window)
+handle_skip(int& skip_counter, InstrDeflateWindow& out_window)
 {
     if (skip_counter > 0) skip_counter--;
     if (skip_counter == 0 && out_window.fully_reconstructed) {
@@ -1972,10 +1934,10 @@ libdeflate_deflate_decompress(struct libdeflate_decompressor* restrict d,
 {
     InputStream in_stream(in, in_nbytes);
 
-    byte*         out_next = out;
-    byte* const   out_end  = out_next + out_nbytes_avail;
-    DeflateWindow out_window(out, out_end);
-    DeflateWindow backup_out(out, out_end);
+    byte*              out_next = out;
+    byte* const        out_end  = out_next + out_nbytes_avail;
+    InstrDeflateWindow out_window(out, out_end);
+    InstrDeflateWindow backup_out(out, out_end);
 
     // blocks counter
     int      failed_decomp_counter = 0;
@@ -2008,7 +1970,6 @@ libdeflate_deflate_decompress(struct libdeflate_decompressor* restrict d,
         bool went_fine = false;
 
         went_fine = do_block(d, in_stream, out_window, is_final_block, aligned);
-
         if (went_fine)
             went_fine
               &= out_window.check_buffer_fastq(aligned); // this is a check that the block is indeed FASTQ-looking
@@ -2029,7 +1990,7 @@ libdeflate_deflate_decompress(struct libdeflate_decompressor* restrict d,
             if (skip_counter == 0 && out_window.fully_reconstructed == false) {
                 out_window.check_fully_reconstructed_sequences(); // see if we have uncertainties in nucleotides
                 if (out_window.fully_reconstructed)
-                    fprintf(stderr, "successfully decoded reads at decoded block %d\n", decoded_blocks);
+                    fprintf(stderr, "successfully decoded reads at decoded block %ld\n", decoded_blocks);
             }
         } else {
             if (aligned) {
