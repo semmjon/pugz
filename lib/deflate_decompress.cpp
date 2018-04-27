@@ -1598,7 +1598,7 @@ class InstrDeflateWindow : public FlushableDeflateWindow
             }
         }
 
-        pretty_print();
+        // pretty_print();
         fprintf(stderr, "check_fully_reconstructed status: total buffer size %d, ", (int)(next - buffer));
         if (res)
             fprintf(
