@@ -1222,7 +1222,7 @@ prepare_static(struct libdeflate_decompressor* restrict d)
     return true;
 }
 
-#define window_bits 20 // FIXME: constructor parameter
+#define output_buffer_bits 20 // FIXME: constructor parameter
 
 /**
  * @brief A window of the size of one decoded shard (some deflate blocks) plus it's 32K context
@@ -1231,8 +1231,8 @@ class DeflateWindow
 {
   public:
     DeflateWindow()
-      : buffer(new byte[1 << window_bits])
-      , buffer_end(buffer + (1 << window_bits))
+      : buffer(new byte[1 << output_buffer_bits])
+      , buffer_end(buffer + (1 << output_buffer_bits))
     {
         clear();
     }
@@ -1321,6 +1321,17 @@ class DeflateWindow
         next += length;
     }
 
+    /// Move the 32K context to the start of the buffer
+    void flush(size_t window_size = 1UL << 15)
+    {
+        assert(size() > window_size);
+        assert(buffer + window_size <= next - window_size); // src and dst aren't overlapping
+        memcpy(buffer, next - window_size, window_size);
+
+        // update next pointer
+        next = buffer + window_size;
+    }
+
   protected:
     byte /* const (FIXME, Rayan: same as InputStream*/*         buffer;     /// Allocated output buffer
     /*const*/ byte* /*const FIXME: Rayan, same as InputStream*/ buffer_end; /// Past the end pointer
@@ -1335,11 +1346,33 @@ class FlushableDeflateWindow : public DeflateWindow
     FlushableDeflateWindow(byte* target, byte* target_end)
       : DeflateWindow()
       , target(target)
+      , target_start(target)
       , target_end(target_end)
     {}
 
+    void flush(size_t start = 0, size_t window_size = 1UL << 15)
+    {
+        assert(size() >= window_size);
+        size_t evict_size = size() - window_size - start;
+        assert(buffer + start + evict_size == next - window_size);
+        assert(target + evict_size < target_end);
+
+        memcpy(target, buffer + start, evict_size);
+        target += evict_size;
+
+        // Then move the context to the start
+        DeflateWindow::flush(window_size);
+    }
+
+    size_t get_evicted_length()
+    {
+        assert(target >= target_start);
+        return size_t(target - target_start);
+    }
+
   protected:
     byte*       target;
+    const byte* target_start;
     const byte* target_end;
 };
 
@@ -1361,11 +1394,10 @@ class InstrDeflateWindow : public FlushableDeflateWindow
       : FlushableDeflateWindow(target, target_end)
       , has_dummy_32k(true)
       , output_to_target(true)
-      , nb_bytes_output(0)
       , fully_reconstructed(false)
       , nb_back_refs_in_block(0)
       , len_back_refs_in_block(0)
-      , buffer_counts(new uint32_t[1 << window_bits])
+      , buffer_counts(new uint32_t[1 << output_buffer_bits])
     {
         clear();
     }
@@ -1628,51 +1660,19 @@ class InstrDeflateWindow : public FlushableDeflateWindow
      * note: not necessarily at the end of a block */
     void flush()
     {
-        // Keep 32K of context, or the current unfinished block
-        const size_t keep_size = 1UL << 15;
-        if (size() > keep_size) { // allways true, currently at least
-            /* what's going to happen
-             * buffer
-             *
-             * pos 0 [
-             *   (maybe a dummy 32k context, if it's the first time we flush the buffer)
-             *   --------
-             *   some other content that's going to be evicted (and copied to target)
-             *   --------
-             *   content that will be kept (going to be the future context)
-             *  ] pos next
-             *
-             *  becomes
-             *
-             *  pos 0 [
-             *  content that will be kept
-             *  ------
-             *  ] pos next
-             *
-             */
-            // Flush the buffer
-            assert(size() >= keep_size);
-            size_t evict_size = size() - keep_size;
-            assert(buffer + evict_size == next - keep_size);
+        size_t           start       = has_dummy_32k ? 1UL << 15 : 0;
+        constexpr size_t window_size = 1UL << 15;
 
-            if (has_dummy_32k) evict_size -= (1 << 15);
-            if (output_to_target) {
-                assert(target + evict_size < target_end);
-                memcpy(target, buffer + (has_dummy_32k ? (1 << 15) : 0), evict_size);
-                target += evict_size;
-                nb_bytes_output += evict_size;
-            }
-            has_dummy_32k = false;
-
-            // Copy the kept section
-            assert(buffer + keep_size < next);
-            memcpy(buffer, next - keep_size, keep_size);
-            // update counts
-            memcpy(buffer_counts, buffer_counts + size() - keep_size, keep_size * sizeof(uint32_t));
-
-            // update next pointer
-            next = buffer + keep_size;
+        if (output_to_target) {
+            FlushableDeflateWindow::flush(start);
+        } else {
+            DeflateWindow::flush(); // Only move the context to the begining
         }
+
+        // update counts
+        memcpy(buffer_counts, buffer_counts + size() - window_size, window_size * sizeof(uint32_t));
+
+        has_dummy_32k = false;
     }
 
     void notify_end_block(bool is_final_block, InputStream& in_stream)
@@ -1688,25 +1688,17 @@ class InstrDeflateWindow : public FlushableDeflateWindow
         len_back_refs_in_block = 0;
     }
 
-    void final_flush()
-    {
-        // assert(target + size() >= target_end); // Rayan:  I'm removing this assert because in the future, we won't
-        // know the target_end (=uncompressed size)
-        memcpy(target, buffer + (has_dummy_32k ? (1 << 15) : 0), size() - (has_dummy_32k ? (1 << 15) : 0));
-    }
-
     bool has_dummy_32k;    // flag whether the window contains the initial dummy 32k context
     bool output_to_target; // flag whether, during a flush, window content should be copied to target or discarded (when
                            // scanning the first 20 blocks)
-    int  nb_bytes_output;
     bool fully_reconstructed; // flag to say whether context is fully reconstructed (heuristic)
-
-    uint32_t /* const (FIXME, Rayan: same as InputStream*/*
-      buffer_counts; /// Allocated counts for keeping track of how many back references in the buffer
 
     // some back-references statistics
     unsigned nb_back_refs_in_block;
     unsigned len_back_refs_in_block;
+
+    uint32_t /* const (FIXME, Rayan: same as InputStream*/*
+      buffer_counts; /// Allocated counts for keeping track of how many back references in the buffer
 };
 
 bool
@@ -1904,8 +1896,8 @@ handle_skip(int& skip_counter, InstrDeflateWindow& out_window)
 {
     if (skip_counter > 0) skip_counter--;
     if (skip_counter == 0 && out_window.fully_reconstructed) {
-        out_window.flush(); // re-initialize the window with just a context and no other block data // TODO not sure if
-                            // that should be placed here or outside if
+        // out_window.flush(); // re-initialize the window with just a context and no other block data // TODO not sure
+        // if that should be placed here or outside if
         out_window.output_to_target = true; // the next block and so on will be output to "out"
     }
 }
@@ -2006,9 +1998,9 @@ libdeflate_deflate_decompress(struct libdeflate_decompressor* restrict d,
         }
     } while ((!aligned) || (aligned && !is_final_block));
 
-    out_window.final_flush();
+    out_window.flush();
 
-    *actual_out_nbytes_ret = out_window.nb_bytes_output; // tell how many bytes we actually output
+    *actual_out_nbytes_ret = out_window.get_evicted_length(); // tell how many bytes we actually output
 
     return LIBDEFLATE_SUCCESS;
 }
