@@ -223,7 +223,6 @@ libdeflate_deflate_decompress(struct libdeflate_decompressor* decompressor,
                               size_t                          out_nbytes_avail,
                               size_t*                         actual_out_nbytes_ret,
                               int                             skip,
-                              signed long long                record,
                               signed long long                until);
 
 /*
@@ -250,7 +249,6 @@ libdeflate_gzip_decompress(struct libdeflate_decompressor* decompressor,
                            size_t                          out_nbytes_avail,
                            size_t*                         actual_out_nbytes_ret,
                            int                             skip,
-                           signed long long                record,
                            signed long long                until);
 
 /*
