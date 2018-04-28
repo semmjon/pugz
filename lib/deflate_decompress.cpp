@@ -58,6 +58,7 @@
 #include "unaligned.h"
 
 #include "libdeflate.h"
+#include "synchronizer.hpp"
 
 #define PRINT_DEBUG(...)                                                                                               \
     {}
@@ -1544,7 +1545,7 @@ class InstrDeflateWindow : public FlushableDeflateWindow
     }
 
     // decide if the buffer contains all the fastq sequences with no ambiguities in them
-    void check_fully_reconstructed_sequences(unsigned review_size = 1 << 15)
+    void check_fully_reconstructed_sequences(synchronizer* stop, bool last_block, unsigned review_size = 1 << 15)
     {
         if (size() < review_size) {
             fprintf(
@@ -1559,9 +1560,15 @@ class InstrDeflateWindow : public FlushableDeflateWindow
 
         // get_sequences_between_separators(); inlined
         std::vector<std::string> putative_sequences;
-        std::string              current_sequence     = "";
-        unsigned                 current_sequence_pos = start_pos;
+        std::string              current_sequence = "";
+        current_sequence.reserve(256);
+        unsigned current_sequence_pos = start_pos;
         for (long int i = start_pos; i < next - buffer; i++) {
+            bool after_current_block = i >= current_blk - buffer; // FIXME: sync parser such that this is always true
+            if (stop != nullptr && last_block && after_current_block
+                && stop->caught_up_first_seq(i - (current_blk - buffer)))
+                break; // We reached the first sequence decoded by the next thread
+
             unsigned char c = buffer[i];
             if (ascii2Dna[c] > 0)
                 current_sequence += c;
@@ -1572,8 +1579,8 @@ class InstrDeflateWindow : public FlushableDeflateWindow
                     // Record the position of the first decoded sequence relative to the block start
                     // Note: this won't be used untill fully_reconstructed is turned on, so no risks of putting garbage
                     // here
-                    if (i >= current_blk - buffer) // FIXME: sync parser such that is always true
-                        first_seq_block_pos = i - (current_blk - buffer);
+                    if (after_current_block) // FIXME: sync parser such that is always true
+                        first_seq_block_pos = current_sequence_pos - (current_blk - buffer);
 
                     putative_sequences.push_back(current_sequence);
                     // note this code may capture stretches of quality values too
@@ -1756,7 +1763,7 @@ class InstrDeflateWindow : public FlushableDeflateWindow
     }
 
     byte*    current_blk;
-    unsigned first_seq_block_pos = 0; /// Position of the first sequence relative to the current block start
+    unsigned first_seq_block_pos = ~0U; /// Position of the first sequence relative to the current block start
 
     bool has_dummy_32k;    // flag whether the window contains the initial dummy 32k context
     bool output_to_target; // flag whether, during a flush, window content should be copied to target or discarded (when
@@ -1977,14 +1984,17 @@ handle_skip(int& skip_counter, InstrDeflateWindow& out_window)
 // Original API:
 
 LIBDEFLATEAPI enum libdeflate_result
-libdeflate_deflate_decompress(struct libdeflate_decompressor* restrict d,
-                              const byte* restrict const in,
-                              size_t                     in_nbytes,
-                              byte* restrict const out,
-                              size_t               out_nbytes_avail,
-                              size_t*              actual_out_nbytes_ret,
-                              int                  skip,
-                              signed long long     until)
+libdeflate_deflate_decompress(
+  struct libdeflate_decompressor* restrict d,
+  const byte* restrict const in,
+  size_t                     in_nbytes,
+  byte* restrict const out,
+  size_t               out_nbytes_avail,
+  size_t*              actual_out_nbytes_ret,
+  synchronizer*        stop,      // indicating where to stop
+  synchronizer*        prev_sync, // for passing our first extracted sequence coordinate to the previous thread
+  int                  skip,
+  signed long long     until)
 {
     InputStream in_stream(in, in_nbytes);
 
@@ -2039,10 +2049,19 @@ libdeflate_deflate_decompress(struct libdeflate_decompressor* restrict d,
             if (handle_until(until, until_counter, position)) break;
             handle_skip(skip_counter, out_window);
 
+            if (stop != nullptr) is_final_block = stop->caught_up_block(block_inpos);
+
             if (skip_counter == 0 && out_window.fully_reconstructed == false) {
-                out_window.check_fully_reconstructed_sequences(); // see if we have uncertainties in nucleotides
-                if (out_window.fully_reconstructed)
+                out_window.check_fully_reconstructed_sequences(
+                  stop, is_final_block); // see if we have uncertainties in nucleotides
+                if (out_window.fully_reconstructed) {
+                    if (prev_sync != nullptr) {
+                        prev_sync->signal_first_decoded_sequence(block_inpos, out_window.first_seq_block_pos);
+                    }
                     fprintf(stderr, "successfully decoded reads at decoded block %ld\n", decoded_blocks);
+                }
+            } else { // FIXME: we want all the sequences, right ?
+                out_window.check_fully_reconstructed_sequences(stop, is_final_block);
             }
 
             out_window.notify_end_block(is_final_block, in_stream);
