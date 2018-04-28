@@ -1647,7 +1647,7 @@ class InstrDeflateWindow : public FlushableDeflateWindow
             }
             PRINT_DEBUG("\n");
         }
-        fully_reconstructed = res;
+        fully_reconstructed |= res;
         DEBUG_FIRST_BLOCK(exit(1);)
     }
 
