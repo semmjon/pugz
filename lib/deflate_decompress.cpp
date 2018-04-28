@@ -53,6 +53,7 @@
 #include <string>
 
 #include <stdexcept>
+#include <pthread.h>
 
 #include "deflate_constants.h"
 #include "unaligned.h"
@@ -171,8 +172,6 @@ struct libdeflate_decompressor
  * which they have to fill less often.
  */
 typedef machine_word_t bitbuf_t;
-
-#undef NDEBUG // FIXME: forced debug
 
 #ifdef NDEBUG
 #    define assert(expr) (likely((expr)) ? static_cast<void>(0) : __builtin_unreachable())
@@ -1634,19 +1633,19 @@ class InstrDeflateWindow : public FlushableDeflateWindow
             }
         }
 
-        pretty_print();
-        fprintf(stderr, "check_fully_reconstructed status: total buffer size %d, ", (int)(next - buffer));
-        if (res)
-            fprintf(
-              stderr, "fully reconstructed %d reads of length %d\n", nb_reads, readlen); // continuation of heuristic
-        else
-            fprintf(stderr, "incomplete, %d reads\n ", nb_reads);
+        // pretty_print();
+        PRINT_DEBUG("check_fully_reconstructed status: total buffer size %d, ", (int)(next - buffer));
+        if (res) {
+            PRINT_DEBUG("fully reconstructed %d reads of length %d\n", nb_reads, readlen); // continuation of heuristic
+        } else {
+            PRINT_DEBUG("incomplete, %d reads\n ", nb_reads);
+        }
 
         if (res == false) {
             for (int i = 0; i < max_histogram; i++) {
-                if (histogram[i] > 0) fprintf(stderr, "histogram[%d]=%d ", i, histogram[i]);
+                if (histogram[i] > 0) PRINT_DEBUG("histogram[%d]=%d ", i, histogram[i]);
             }
-            fprintf(stderr, "\n");
+            PRINT_DEBUG("\n");
         }
         fully_reconstructed = res;
         DEBUG_FIRST_BLOCK(exit(1);)
@@ -1879,7 +1878,7 @@ do_block(struct libdeflate_decompressor* restrict d,
                     PRINT_DEBUG("first block is asking to flush already, probably bad\n");
                     return false;
                 }
-                fprintf(stderr, "flushing now\n");
+                PRINT_DEBUG("flushing now\n");
                 out.flush();
             }
 
@@ -2012,6 +2011,8 @@ libdeflate_deflate_decompress(
     int        skip_counter  = 0;
     int        nb_to_record  = 10;
 
+    fprintf(stderr, "Thread %lu started with a skip of %lu bytes\n", pthread_self(), skip);
+
     /* Skipping user-set amount of bytes, after the header of course */
     if (skip) {
         in_stream.in_next += skip; // TODO: will probably not be valid when input is a stream
@@ -2049,13 +2050,21 @@ libdeflate_deflate_decompress(
             if (handle_until(until, until_counter, position)) break;
             handle_skip(skip_counter, out_window);
 
-            if (stop != nullptr) is_final_block = stop->caught_up_block(block_inpos);
+            if (stop != nullptr && !is_final_block) {
+                is_final_block |= stop->caught_up_block(block_inpos);
+                if (is_final_block) fprintf(stderr, "thread %lu stoped at %lu\n", pthread_self(), block_inpos);
+            }
 
             if (skip_counter == 0 && out_window.fully_reconstructed == false) {
                 out_window.check_fully_reconstructed_sequences(
                   stop, is_final_block); // see if we have uncertainties in nucleotides
                 if (out_window.fully_reconstructed) {
                     if (prev_sync != nullptr) {
+                        fprintf(stderr,
+                                "Thread %lu found it's first sequence in block %lu at position %u\n",
+                                pthread_self(),
+                                block_inpos,
+                                out_window.first_seq_block_pos);
                         prev_sync->signal_first_decoded_sequence(block_inpos, out_window.first_seq_block_pos);
                     }
                     fprintf(stderr, "successfully decoded reads at decoded block %ld\n", decoded_blocks);
@@ -2104,6 +2113,12 @@ LIBDEFLATEAPI struct libdeflate_decompressor*
 libdeflate_alloc_decompressor(void)
 {
     return new libdeflate_decompressor();
+}
+
+LIBDEFLATEAPI struct libdeflate_decompressor*
+libdeflate_copy_decompressor(libdeflate_decompressor* d)
+{
+    return new libdeflate_decompressor(*d);
 }
 
 LIBDEFLATEAPI void

@@ -31,6 +31,9 @@
 #include "unaligned.h"
 
 #include "libdeflate.h"
+#include "synchronizer.hpp"
+#include <vector>
+#include <thread>
 
 template<typename T>
 bool
@@ -46,6 +49,7 @@ libdeflate_gzip_decompress(struct libdeflate_decompressor* d,
                            byte*                           out,
                            size_t                          out_nbytes_avail,
                            size_t*                         actual_out_nbytes_ret,
+                           unsigned                        nthreads,
                            int                             skip,
                            signed long long                until)
 {
@@ -103,9 +107,58 @@ libdeflate_gzip_decompress(struct libdeflate_decompressor* d,
         if (in_end - in_next < GZIP_FOOTER_SIZE) return LIBDEFLATE_BAD_DATA;
     }
 
-    /* Compressed data  */
-    result = libdeflate_deflate_decompress(
-      d, in_next, in_end - GZIP_FOOTER_SIZE - in_next, out, out_nbytes_avail, actual_out_nbytes_ret, skip, until);
+    if (nthreads <= 1) {
+        /* Compressed data  */
+        result = libdeflate_deflate_decompress(d,
+                                               in_next,
+                                               in_end - GZIP_FOOTER_SIZE - in_next,
+                                               out,
+                                               out_nbytes_avail,
+                                               actual_out_nbytes_ret,
+                                               nullptr,
+                                               nullptr,
+                                               skip,
+                                               until);
+    } else {
+        std::vector<std::thread> threads;
+        threads.reserve(nthreads);
+        std::vector<synchronizer> syncs(nthreads - 1);
+        size_t                    chunk_size = (in_end - in_next) / nthreads;
+
+        size_t        start     = skip;
+        synchronizer* prev_sync = nullptr;
+        for (unsigned i = 0; i < nthreads; i++) {
+            synchronizer* stop = i < nthreads - 1 ? &syncs[i] : nullptr;
+
+            threads.emplace_back([=]() {
+                libdeflate_decompressor* local_d = libdeflate_copy_decompressor(d);
+
+                enum libdeflate_result local_result = libdeflate_deflate_decompress(local_d,
+                                                                                    in_next,
+                                                                                    in_end - GZIP_FOOTER_SIZE - in_next,
+                                                                                    out,
+                                                                                    out_nbytes_avail,
+                                                                                    actual_out_nbytes_ret,
+                                                                                    stop,
+                                                                                    prev_sync,
+                                                                                    start,
+                                                                                    until);
+
+                if (local_result != LIBDEFLATE_SUCCESS) exit(LIBDEFLATE_SUCCESS); // FIXME: use futures to pass resulte
+
+                libdeflate_free_decompressor(local_d);
+            });
+
+            prev_sync = stop;
+            start += chunk_size;
+        }
+
+        for (auto& thread : threads)
+            thread.join();
+
+        result = LIBDEFLATE_SUCCESS;
+    }
+
     if (result != LIBDEFLATE_SUCCESS) return result;
 
     if (actual_out_nbytes_ret)

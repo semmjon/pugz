@@ -44,11 +44,12 @@ struct options
     bool             force;
     bool             keep;
     const tchar*     suffix;
+    unsigned         nthreads;
     int              skip;
     signed long long until;
 };
 
-static const tchar* const optstring = T("1::2::3::4::5::6::7::8::9::cdfhknS:s:r:u:V");
+static const tchar* const optstring = T("1::2::3::4::5::6::7::8::9::cdfhknS:s:t:u:V");
 
 static void
 show_usage(FILE* fp)
@@ -66,6 +67,7 @@ show_usage(FILE* fp)
             "  -f        overwrite existing output files\n"
             "  -h        print this help\n"
             "  -k        don't delete input files\n"
+            "  -t n      use n threads\n"
             "  -S SUF    use suffix SUF instead of .gz\n"
             "  -s BYTES  skip BYTES of compressed data, then skip 20 blocks, then decompress the rest\n"
             "  -u BYTES  stop 20 block after position BYTES in compressed data\n"
@@ -120,6 +122,7 @@ static int
 do_decompress(struct libdeflate_decompressor* decompressor,
               struct file_stream*             in,
               struct file_stream*             out,
+              unsigned                        nthreads,
               int                             skip,
               signed long long                until)
 {
@@ -154,6 +157,7 @@ do_decompress(struct libdeflate_decompressor* decompressor,
                                         uncompressed_data,
                                         uncompressed_size,
                                         &actual_uncompressed_size,
+                                        nthreads,
                                         skip,
                                         until);
 
@@ -323,7 +327,7 @@ decompress_file(struct libdeflate_decompressor* decompressor, const tchar* path,
     ret = map_file_contents(&in, stbuf.st_size);
     if (ret != 0) goto out_close_out;
 
-    ret = do_decompress(decompressor, &in, &out, options->skip, options->until);
+    ret = do_decompress(decompressor, &in, &out, options->nthreads, options->skip, options->until);
     if (ret != 0) goto out_close_out;
 
     if (oldpath != NULL && newpath != NULL) restore_metadata(&out, newpath, &stbuf);
@@ -356,6 +360,7 @@ tmain(int argc, tchar* argv[])
     options.force     = false;
     options.keep      = false;
     options.suffix    = T(".gz");
+    options.nthreads  = 1;
     options.skip      = 0;
     options.until     = -1;
 
@@ -379,6 +384,10 @@ tmain(int argc, tchar* argv[])
                     msg("invalid suffix");
                     return 1;
                 }
+                break;
+            case 't':
+                options.nthreads = atoi(toptarg);
+                fprintf(stderr, "using %d threads for decompression (experimental)\n", options.nthreads);
                 break;
             case 's':
                 options.skip = atoi(toptarg);

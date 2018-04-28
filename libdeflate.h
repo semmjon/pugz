@@ -165,6 +165,9 @@ struct libdeflate_decompressor;
 LIBDEFLATEAPI struct libdeflate_decompressor*
 libdeflate_alloc_decompressor(void);
 
+LIBDEFLATEAPI struct libdeflate_decompressor*
+libdeflate_copy_decompressor(struct libdeflate_decompressor*);
+
 /*
  * Result of a call to libdeflate_deflate_decompress(),
  * libdeflate_zlib_decompress(), or libdeflate_gzip_decompress().
@@ -215,15 +218,21 @@ enum libdeflate_result {
  *     not large enough but no other problems were encountered, or another
  *     nonzero result code if decompression failed for another reason.
  */
+
+class synchronizer;
+
 LIBDEFLATEAPI enum libdeflate_result
-libdeflate_deflate_decompress(struct libdeflate_decompressor* decompressor,
-                              const byte*                     in,
-                              size_t                          in_nbytes,
-                              byte*                           out,
-                              size_t                          out_nbytes_avail,
-                              size_t*                         actual_out_nbytes_ret,
-                              int                             skip,
-                              signed long long                until);
+libdeflate_deflate_decompress(
+  struct libdeflate_decompressor* decompressor,
+  const byte*                     in,
+  size_t                          in_nbytes,
+  byte*                           out,
+  size_t                          out_nbytes_avail,
+  size_t*                         actual_out_nbytes_ret,
+  synchronizer*                   stop, // indicating where to stop
+  synchronizer*    prev_sync,           // for passing our first extracted sequence coordinate to the previous thread
+  int              skip,
+  signed long long until);
 
 /*
  * Like libdeflate_deflate_decompress(), but assumes the zlib wrapper format
@@ -248,6 +257,7 @@ libdeflate_gzip_decompress(struct libdeflate_decompressor* decompressor,
                            byte*                           out,
                            size_t                          out_nbytes_avail,
                            size_t*                         actual_out_nbytes_ret,
+                           unsigned                        nthreads,
                            int                             skip,
                            signed long long                until);
 
