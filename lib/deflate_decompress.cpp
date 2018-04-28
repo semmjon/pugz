@@ -1491,12 +1491,31 @@ class InstrDeflateWindow : public FlushableDeflateWindow
         Base::copy(in, length);
     }
 
+    bool check_ascii()
+    {
+        unsigned start    = has_dummy_32k ? (1 << 15) : 0;
+        unsigned dec_size = size() - start;
+        if (dec_size < 1024) { // Required decoded size to properly assess block synchronization
+            return false;
+        }
+
+        unsigned ascii_found = 0;
+        for (unsigned i = has_dummy_32k ? (1 << 15) : 0; i < size(); i++) {
+            unsigned char c = buffer[i];
+            if (c > '~') { return false; }
+            if (c != '?') { ascii_found++; }
+        }
+
+        return ascii_found >= dec_size / 4;
+    }
+
     // make sure the buffer contains at least something that looks like fastq
     // funny story: sometimes a bad buffer may contain many repetitions of the same letter
     // anyhow, this function could be vastly improved by penalizing non-ACTG chars
     bool check_buffer_fastq(bool previously_aligned, unsigned review_len = 1 << 15)
     {
-        if (next - buffer < review_len) return false; // block too small, nothing to do
+        unsigned start = has_dummy_32k ? (1 << 15) : 0;
+        if (next - buffer < review_len + start) return false; // block too small, nothing to do
 
         PRINT_DEBUG(
           "potential good block, beginning fastq check, bounds %ld %ld\n", next - (1 << 15) - buffer, next - buffer);
@@ -1990,15 +2009,18 @@ libdeflate_deflate_decompress(struct libdeflate_decompressor* restrict d,
 
     do {
         InputStream backup_in(in_stream);
-        out_window.backup(backup_out);
+        // out_window.backup(backup_out);
         // PRINT_DEBUG("before block,             out window %x - %x\n", out_window.next, out_window.buffer_end);
 
         bool went_fine = false;
 
         went_fine = do_block(d, in_stream, out_window, is_final_block);
-        if (went_fine)
-            went_fine
-              &= out_window.check_buffer_fastq(aligned); // this is a check that the block is indeed FASTQ-looking
+        if (!aligned && went_fine) {
+            went_fine &= out_window.check_ascii();
+            if (went_fine) {
+                PRINT_DEBUG("First sync block at %d %d\n", in_stream.position(), in_stream.position_bits());
+            }
+        }
 
         if (went_fine) {
             decoded_blocks++;
