@@ -40,13 +40,13 @@
 
 struct options
 {
-    bool             to_stdout;
-    bool             force;
-    bool             keep;
-    const tchar*     suffix;
-    unsigned         nthreads;
-    int              skip;
-    signed long long until;
+    bool         to_stdout;
+    bool         force;
+    bool         keep;
+    const tchar* suffix;
+    unsigned     nthreads;
+    size_t       skip;
+    size_t       until;
 };
 
 static const tchar* const optstring = T("1::2::3::4::5::6::7::8::9::cdfhknS:s:t:u:V");
@@ -123,8 +123,8 @@ do_decompress(struct libdeflate_decompressor* decompressor,
               struct file_stream*             in,
               struct file_stream*             out,
               unsigned                        nthreads,
-              int                             skip,
-              signed long long                until)
+              size_t                          skip,
+              size_t                          until)
 {
     const byte*            compressed_data   = static_cast<const byte*>(in->mmap_mem);
     size_t                 compressed_size   = in->mmap_size;
@@ -361,7 +361,7 @@ tmain(int argc, tchar* argv[])
     options.suffix    = T(".gz");
     options.nthreads  = 1;
     options.skip      = 0;
-    options.until     = -1;
+    options.until     = SIZE_MAX;
 
     while ((opt_char = tgetopt(argc, argv, optstring)) != -1) {
         switch (opt_char) {
@@ -389,11 +389,11 @@ tmain(int argc, tchar* argv[])
                 fprintf(stderr, "using %d threads for decompression (experimental)\n", options.nthreads);
                 break;
             case 's':
-                options.skip = atoi(toptarg);
+                options.skip = strtoul(toptarg, NULL, 10);
                 fprintf(stderr, "skipping %d bytes (experimental)\n", options.skip);
                 break;
             case 'u':
-                options.until = atoi(toptarg);
+                options.until = strtoul(toptarg, NULL, 10);
                 fprintf(stderr, "decoding until 20 blocks after compressed position %lld\n", options.until);
                 break;
 
