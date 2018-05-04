@@ -436,6 +436,32 @@ class InputStream
     }
 };
 
+/// Allows to biais branch weight based on template parameter
+struct ShouldSucceed
+{
+    static constexpr bool succeed_if(bool p) { return likely(p); }
+    static constexpr bool fail_if(bool p) { return unlikely(p); }
+};
+struct ShouldFail
+{
+    static constexpr bool succeed_if(bool p) { return unlikely(p); }
+    static constexpr bool fail_if(bool p) { return likely(p); }
+};
+struct MustSucceed
+{
+    // FIXME: runtime errors in release mode
+    static constexpr bool succeed_if(bool p)
+    {
+        assert(p);
+        return true;
+    }
+    static constexpr bool fail_if(bool p)
+    {
+        assert(!p);
+        return false;
+    }
+};
+
 /*****************************************************************************
  *                              Huffman decoding                             *
  *****************************************************************************/
@@ -890,14 +916,16 @@ static forceinline u32
  * Returns %true if successful; %false if the codeword lengths do not form a
  * valid Huffman code.
  */
-static bool
+template<typename might>
+static inline bool
 build_decode_table(u32            decode_table[],
                    const len_t    lens[],
                    const unsigned num_syms,
                    const u32      decode_results[],
                    const unsigned table_bits,
                    const unsigned max_codeword_len,
-                   u16            working_space[])
+                   u16            working_space[],
+                   const might&   might_tag)
 {
     /* Count how many symbols have each codeword length, including 0.  */
     u16* const len_counts = &working_space[0];
@@ -930,7 +958,7 @@ build_decode_table(u32            decode_table[],
     for (unsigned len = 1; len <= max_codeword_len; len++) {
         remainder <<= 1;
         remainder -= len_counts[len];
-        if (unlikely(remainder < 0)) {
+        if (might::fail_if(remainder < 0)) {
             /* The lengths overflow the codespace; that is, the code
              * is over-subscribed.  */
             return false;
@@ -950,7 +978,7 @@ build_decode_table(u32            decode_table[],
             decode_table[sym] = entry;
 
         /* A completely empty code is permitted.  */
-        if (remainder == s32(1U << max_codeword_len)) return true;
+        if (might::succeed_if(remainder == s32(1U << max_codeword_len))) return true;
 
         /* The code is nonempty and incomplete.  Proceed only if there
          * is a single used symbol and its codeword has length 1.  The
@@ -959,7 +987,7 @@ build_decode_table(u32            decode_table[],
          * literal/length and offset codes and assume the codeword is 0
          * rather than 1.  We do the same except we allow this case for
          * precodes too.  */
-        if (remainder != s32(1U << (max_codeword_len - 1)) || len_counts[1] != 1) return false;
+        if (might::fail_if(remainder != s32(1U << (max_codeword_len - 1)) || len_counts[1] != 1)) return false;
     }
 
     /* Generate the decode table entries.  Since we process codewords from
@@ -1066,8 +1094,9 @@ build_decode_table(u32            decode_table[],
 }
 
 /* Build the decode table for the precode.  */
-static bool
-build_precode_decode_table(struct libdeflate_decompressor* d)
+template<typename might>
+static inline bool
+build_precode_decode_table(struct libdeflate_decompressor* d, const might& might_tag)
 {
     /* When you change TABLEBITS, you must change ENOUGH, and vice versa! */
     STATIC_ASSERT(PRECODE_TABLEBITS == 7 && PRECODE_ENOUGH == 128);
@@ -1078,12 +1107,17 @@ build_precode_decode_table(struct libdeflate_decompressor* d)
                                              precode_decode_results,
                                              PRECODE_TABLEBITS,
                                              DEFLATE_MAX_PRE_CODEWORD_LEN,
-                                             d->working_space);
+                                             d->working_space,
+                                             might_tag);
 }
 
 /* Build the decode table for the literal/length code.  */
-static bool
-build_litlen_decode_table(struct libdeflate_decompressor* d, unsigned num_litlen_syms, unsigned num_offset_syms)
+template<typename might>
+static inline bool
+build_litlen_decode_table(struct libdeflate_decompressor* d,
+                          unsigned                        num_litlen_syms,
+                          unsigned                        num_offset_syms,
+                          const might&                    might_tag)
 {
     /* When you change TABLEBITS, you must change ENOUGH, and vice versa! */
     STATIC_ASSERT(LITLEN_TABLEBITS == 10 && LITLEN_ENOUGH == 1334);
@@ -1094,12 +1128,17 @@ build_litlen_decode_table(struct libdeflate_decompressor* d, unsigned num_litlen
                               litlen_decode_results,
                               LITLEN_TABLEBITS,
                               DEFLATE_MAX_LITLEN_CODEWORD_LEN,
-                              d->working_space);
+                              d->working_space,
+                              might_tag);
 }
 
 /* Build the decode table for the offset code.  */
-static bool
-build_offset_decode_table(struct libdeflate_decompressor* d, unsigned num_litlen_syms, unsigned num_offset_syms)
+template<typename might>
+static inline bool
+build_offset_decode_table(struct libdeflate_decompressor* d,
+                          unsigned                        num_litlen_syms,
+                          unsigned                        num_offset_syms,
+                          const might&                    migth_tag)
 {
     /* When you change TABLEBITS, you must change ENOUGH, and vice versa! */
     STATIC_ASSERT(OFFSET_TABLEBITS == 8 && OFFSET_ENOUGH == 402);
@@ -1110,7 +1149,8 @@ build_offset_decode_table(struct libdeflate_decompressor* d, unsigned num_litlen
                               offset_decode_results,
                               OFFSET_TABLEBITS,
                               DEFLATE_MAX_OFFSET_CODEWORD_LEN,
-                              d->working_space);
+                              d->working_space,
+                              migth_tag);
 }
 
 } /* namespace table_builder */
@@ -1151,8 +1191,9 @@ copy_word_unaligned(const void* src, void* dst)
  *                         Main decompression routine
  *****************************************************************************/
 
-bool
-prepare_dynamic(struct libdeflate_decompressor* restrict d, InputStream& in_stream)
+template<typename might>
+static inline bool
+prepare_dynamic(struct libdeflate_decompressor* restrict d, InputStream& in_stream, const might& might_tag)
 {
 
     /* The order in which precode lengths are stored.  */
@@ -1174,7 +1215,7 @@ prepare_dynamic(struct libdeflate_decompressor* restrict d, InputStream& in_stre
         d->u.precode_lens[deflate_precode_lens_permutation[i]] = 0;
 
     /* Build the decode table for the precode.  */
-    if (!build_precode_decode_table(d)) return false;
+    if (might::fail_if(!build_precode_decode_table(d, might_tag))) return false;
 
     /* Expand the literal/length and offset codeword lengths.  */
     for (unsigned i = 0; i < num_litlen_syms + num_offset_syms;) {
@@ -1215,7 +1256,7 @@ prepare_dynamic(struct libdeflate_decompressor* restrict d, InputStream& in_stre
          */
         if (presym == 16) {
             /* Repeat the previous length 3 - 6 times  */
-            if (!(i != 0)) {
+            if (might::fail_if(!(i != 0))) {
                 PRINT_DEBUG("fail at (i!=0)\n");
                 return false;
             }
@@ -1250,11 +1291,11 @@ prepare_dynamic(struct libdeflate_decompressor* restrict d, InputStream& in_stre
         }
     }
 
-    if (!build_offset_decode_table(d, num_litlen_syms, num_offset_syms)) {
+    if (!build_offset_decode_table(d, num_litlen_syms, num_offset_syms, might_tag)) {
         PRINT_DEBUG("fail at build_offset_decode_table(d, num_litlen_syms, num_offset_syms)\n");
         return false;
     }
-    if (!build_litlen_decode_table(d, num_litlen_syms, num_offset_syms)) {
+    if (!build_litlen_decode_table(d, num_litlen_syms, num_offset_syms, might_tag)) {
         PRINT_DEBUG("fail at build_litlen_decode_table(d, num_litlen_syms, num_offset_syms)\n");
         return false;
     }
@@ -1262,7 +1303,7 @@ prepare_dynamic(struct libdeflate_decompressor* restrict d, InputStream& in_stre
     return true;
 }
 
-bool
+static inline void
 prepare_static(struct libdeflate_decompressor* restrict d)
 {
     /* Static Huffman block: set the static Huffman codeword
@@ -1279,16 +1320,8 @@ prepare_static(struct libdeflate_decompressor* restrict d)
     for (unsigned i = DEFLATE_NUM_LITLEN_SYMS; i < DEFLATE_NUM_LITLEN_SYMS + DEFLATE_NUM_OFFSET_SYMS; i++)
         d->u.l.lens[i] = 5;
 
-    if (!build_offset_decode_table(d, DEFLATE_NUM_LITLEN_SYMS, DEFLATE_NUM_OFFSET_SYMS)) {
-        PRINT_DEBUG("fail at build_offset_decode_table, static case\n");
-        return false;
-    }
-    if (!build_litlen_decode_table(d, DEFLATE_NUM_LITLEN_SYMS, DEFLATE_NUM_OFFSET_SYMS)) {
-        PRINT_DEBUG("fail at build_litlen_decode_table, static case \n");
-        return false;
-    }
-
-    return true;
+    assert(build_offset_decode_table(d, DEFLATE_NUM_LITLEN_SYMS, DEFLATE_NUM_OFFSET_SYMS, ShouldSucceed{}));
+    assert(build_litlen_decode_table(d, DEFLATE_NUM_LITLEN_SYMS, DEFLATE_NUM_OFFSET_SYMS, ShouldSucceed{}));
 }
 
 #define output_buffer_bits 20 // FIXME: constructor parameter
@@ -1847,8 +1880,9 @@ class InstrDeflateWindow : public FlushableDeflateWindow
     uint16_t* backref_origins;
 };
 
-bool
-do_uncompressed(InputStream& in_stream, InstrDeflateWindow& out)
+template<typename OutWindow, typename might>
+inline bool
+do_uncompressed(InputStream& in_stream, OutWindow& out, const might&)
 {
     /* Uncompressed block: copy 'len' bytes literally from the input
      * buffer to the output buffer.  */
@@ -1856,33 +1890,37 @@ do_uncompressed(InputStream& in_stream, InstrDeflateWindow& out)
     in_stream.align_input();
 
     if (unlikely(in_stream.available() < 4)) {
-        PRINT_DEBUG("bad block (trivially due to uncompressed check)\n");
+        PRINT_DEBUG("bad block, uncompressed check less than 4 bytes in input\n");
         return false;
     }
 
     u16 len  = in_stream.pop_u16();
     u16 nlen = in_stream.pop_u16();
 
-    if (!(len == (u16)~nlen)) {
-        PRINT_DEBUG("bad block (trivially due to uncompressed check)\n");
+    if (might::fail_if(len != (u16)~nlen)) {
+        PRINT_DEBUG("bad uncompressed block: len encoding check\n");
         return false;
     }
 
     if (unlikely(len > in_stream.available())) {
-        PRINT_DEBUG("bad block (trivially due to uncompressed check)\n");
+        PRINT_DEBUG("bad uncompressed block: len bigger than input stream \n");
         return false;
     }
 
-    out.copy(in_stream, len);
+    if (might::fail_if(!out.copy(in_stream, len))) {
+        PRINT_DEBUG("bad uncompressed block: rejected by output window (non-ascii)\n");
+        return false;
+    };
     return true;
 }
 
 /* return true if block decompression went smoothly, false if not (probably due to corrupt data) */
-bool
-do_block(struct libdeflate_decompressor* restrict d,
+template<typename OutWindow, typename might = ShouldSucceed>
+inline bool
+do_block(struct libdeflate_decompressor* restrict main_d,
          InputStream&                             in_stream,
-         InstrDeflateWindow&                      out,
-         bool&                                    is_final_block)
+         OutWindow&                               out,
+         const might&                             might_tag = {})
 {
     /* Starting to read the next block.  */
     in_stream.ensure_bits<1 + 2 + 5 + 5 + 4>();
@@ -1891,32 +1929,29 @@ do_block(struct libdeflate_decompressor* restrict d,
                                               // it is, if we have been unable to decompress any block..)
     {
         fprintf(stderr, "reached end of file\n");
-        is_final_block = true;
+        in_stream.reached_final_block = true;
         return false;
     }
 
     /* BFINAL: 1 bit  */
-    is_final_block = in_stream.pop_bits(1);
+    in_stream.reached_final_block = in_stream.pop_bits(1);
 
     bool ret;
     /* BTYPE: 2 bits  */
     switch (in_stream.pop_bits(2)) {
         case DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN:
             ret = prepare_dynamic(d, in_stream);
-            if (!ret) return false;
+            if (might::fail_if(!ret)) return false;
             break;
 
-        case DEFLATE_BLOCKTYPE_UNCOMPRESSED:
-            ret = do_uncompressed(in_stream, out);
-            if (!ret) return false;
-            break;
+        case DEFLATE_BLOCKTYPE_UNCOMPRESSED: return do_uncompressed(in_stream, out, might_tag); break;
 
         case DEFLATE_BLOCKTYPE_STATIC_HUFFMAN:
             ret = prepare_static(d);
             if (!ret) return false;
             break;
 
-        default: return false;
+        default: return might::fail_if(false);
     }
 
     /* Decompressing a Huffman block (either dynamic or static)  */
@@ -1939,25 +1974,10 @@ do_block(struct libdeflate_decompressor* restrict d,
         if (entry & HUFFDEC_LITERAL) {
             /* Literal  */
             if (unlikely(out.available() == 0)) {
-                if (out.has_dummy_32k) // if it's the first block, there is really no reason why buffer should already
-                                       // be full
-                {
-                    PRINT_DEBUG("first block is asking to flush already, probably bad\n");
-                    return false;
-                }
-                PRINT_DEBUG("flushing now\n");
-                out.flush();
+                if (might::fail_if(out.flush() == 0)) return false;
             }
 
-            if (unlikely(char(entry >> HUFFDEC_RESULT_SHIFT) > '~')) {
-                {
-                    PRINT_DEBUG("fail, unprintable literal unexpected in fastq\n");
-                    return false;
-                }
-
-                return false;
-            }
-            out.push(byte(entry >> HUFFDEC_RESULT_SHIFT));
+            if (might::fail_if(!out.push(byte(entry >> HUFFDEC_RESULT_SHIFT)))) { return false; }
 
             // fprintf(stderr,"literal: %c\n",byte(entry >> HUFFDEC_RESULT_SHIFT)); // this is indeed the plaintext
             // decoded character, good to know
@@ -2009,12 +2029,8 @@ do_block(struct libdeflate_decompressor* restrict d,
 
         /* Copy the match: 'length' bytes at 'out_next - offset' to
          * 'out_next'.  */
-        if (!out.check_match(length, offset)) { return false; }
-        out.copy_match(length, offset);
+        if (might::fail_if(!out.copy_match(length, offset))) { return false; }
     }
-
-    out.notify_end_block(is_final_block, in_stream);
-    return true;
 }
 
 /* if we need to stop 20 blocks after some point, and that point has been reached, setup a counter */
