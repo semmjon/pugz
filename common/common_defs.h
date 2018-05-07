@@ -254,19 +254,31 @@ static forceinline u64
 #    endif /* !DEFINE_UNALIGNED_TYPE */
 
 /* ========================================================================== */
-/*                             Bit scan functions                             */
+/*                             Debug macros                                   */
 /* ========================================================================== */
 
-/*
- * Bit Scan Reverse (BSR) - find the 0-based index (relative to the least
- * significant end) of the *most* significant 1 bit in the input value.  The
- * input value must be nonzero!
- */
+#    if defined(PRINT_DEBUG) && PRINT_DEBUG
+#        undef PRINT_DEBUG
+#        define PRINT_DEBUG(...)                                                                                       \
+            {                                                                                                          \
+                fprintf(stderr, __VA_ARGS__);                                                                          \
+            }
+#    else
+#        undef PRINT_DEBUG
+#        define PRINT_DEBUG(...)                                                                                       \
+            {}
+#    endif
 
-/*
- * Bit Scan Forward (BSF) - find the 0-based index (relative to the least
- * significant end) of the *least* significant 1 bit in the input value.  The
- * input value must be nonzero!
- */
+#    if defined(DEBUG_FIRST_BLOCK) && DEBUG_FIRST_BLOCK
+#        undef DEBUG_FIRST_BLOCK
+#        define DEBUG_FIRST_BLOCK(x)                                                                                   \
+            {                                                                                                          \
+                x                                                                                                      \
+            }
+#    else
+#        undef DEBUG_FIRST_BLOCK
+#        define DEBUG_FIRST_BLOCK(x)                                                                                   \
+            {}
+#    endif
 
-#endif /* COMMON_COMMON_DEFS_H */
+#endif
