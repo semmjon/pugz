@@ -358,8 +358,10 @@ do_skip(struct libdeflate_decompressor* restrict d,
     if (skip == 0) return {Window(), size_t(0)};
     in_stream.skip(skip);
 
-    SyncingDeflateWindow<Window> out_window;
-    size_t                       bits_skipped = 0;
+    SymbolicDummyContext<Window> out_window;
+    using char_t = typename Window::char_t;
+
+    size_t bits_skipped = 0;
     for (; bits_skipped < max_bits_skip && in_stream.ensure_bits<1>(); bits_skipped++, in_stream.remove_bits(1)) {
         if (in_stream.bits(1)) // We don't except to find a final block
             continue;
@@ -405,8 +407,8 @@ print_block_boundaries(struct libdeflate_decompressor* restrict d,
                        const InputStream&                       in_stream,
                        size_t                                   nb_blocks = ~size_t(0))
 {
-    SyncingDeflateWindow<DeflateWindow<>> out_window;
-    InputStream                           cur_in = in_stream;
+    SymbolicDummyContext<> out_window;
+    InputStream            cur_in = in_stream;
     for (size_t i = 0; i < nb_blocks && !cur_in.reached_final_block; i++) {
         fprintf(stderr,
                 "Block bundary: %12lubits, remains: %12lubits %12lu %12lu\n",
@@ -441,7 +443,8 @@ libdeflate_deflate_decompress(
   size_t               until)
 {
     InputStream in_stream(in, in_nbytes);
-    stderr = stdout;
+    stderr       = stdout;
+    using Window = AsciiOnly<DeflateWindow<uint16_t>>;
 
     // byte *out_next = out;
     // byte * const out_end = out_next + out_nbytes_avail;
