@@ -40,12 +40,11 @@ class InputStream
 
     /** State */
     const byte* const begin;
-    const byte* restrict in_next;                                 /// Read pointer
-    const byte* restrict const in_end;                            /// Adress of the byte after input
-    bitbuf_t                   bitbuf              = bitbuf_t(0); /// Bit buffer
-    bitbuf_size_t              bitsleft            = 0;           /// Number of valid bits in the bit buffer
-    bitbuf_size_t              overrun_count       = 0;
-    bool                       reached_final_block = false;
+    const byte* restrict in_next;                           /// Read pointer
+    const byte* restrict const in_end;                      /// Adress of the byte after input
+    bitbuf_t                   bitbuf        = bitbuf_t(0); /// Bit buffer
+    bitbuf_size_t              bitsleft      = 0;           /// Number of valid bits in the bit buffer
+    bitbuf_size_t              overrun_count = 0;
 
     /**
      * Number of bits the bitbuffer variable can hold.
@@ -125,11 +124,10 @@ class InputStream
     {
         assert(begin == from.begin && in_end == from.in_end);
 
-        in_next             = from.in_next;
-        bitbuf              = from.bitbuf;
-        bitsleft            = from.bitsleft;
-        overrun_count       = from.overrun_count;
-        reached_final_block = from.reached_final_block;
+        in_next       = from.in_next;
+        bitbuf        = from.bitbuf;
+        bitsleft      = from.bitsleft;
+        overrun_count = from.overrun_count;
         return *this;
     }
 
