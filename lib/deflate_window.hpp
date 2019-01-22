@@ -28,64 +28,37 @@ repeat_bits(from_t b)
 /**
  * @brief A window of the size of one decoded shard (some deflate blocks) plus it's 32K context
  */
-template<typename _char_t = char, unsigned _buffer_bits = 21, unsigned _context_bits = 15>
+template<typename _char_t = char, unsigned _context_bits = 15>
 struct DeflateWindow
 {
     // TODO: should we set these at runtime ? context_bits=15 should be fine for all compression levels
     // buffer_size could be adjusted on L3 cache size.
     // But: there is a runtime cost as we loose some optimizations
-    static constexpr unsigned buffer_bits = _buffer_bits;
     static constexpr unsigned context_bits = _context_bits;
-    static_assert(context_bits < buffer_bits, "Buffer too small for context");
 
     using char_t = _char_t;
     static constexpr char_t max_value = 255, min_value = 0;
 
     using wsize_t = uint_fast32_t; /// Type for positive offset in buffer
     using wssize_t = int_fast32_t; /// Type for signed offsets in buffer
-    static_assert(std::numeric_limits<wsize_t>::max() > (1ULL << buffer_bits), "Buffer too large for wsize_t");
-    static_assert(std::numeric_limits<wssize_t>::max() > (1ULL << buffer_bits), "Buffer too large for wssize_t");
 
     static constexpr wsize_t context_size = wsize_t(1) << context_bits;
-    static constexpr wsize_t buffer_size = wsize_t(1) << buffer_bits;
 
-    DeflateWindow()
-      : buffer(new char_t[buffer_size])
-      , buffer_end(buffer + buffer_size)
-      , next(buffer)
+    DeflateWindow(char_t* _buffer, wsize_t buffer_size)
+      : buffer(_buffer)
+      , buffer_end(_buffer + buffer_size)
+      , next(_buffer)
     {}
 
-    ~DeflateWindow()
-    {
-        if (next != nullptr) // Not in a moved-from state
-            delete[] buffer;
-    }
-
-    DeflateWindow(DeflateWindow&& from)
-      : buffer(from.buffer)
-      , buffer_end(from.buffer + buffer_size)
-      , next(from.next)
-    {
-        from.next = nullptr;
-    }
-
-    DeflateWindow operator=(DeflateWindow&&) = delete;
-
-    /// Clone the context window
-    DeflateWindow(const DeflateWindow& from)
-      : DeflateWindow()
-    {
-        clone_context(from);
-    }
-
-    /// Clone the context window
-    DeflateWindow& operator=(const DeflateWindow& from)
-    {
-        clear();
-        clone_context(from);
-    }
+    DeflateWindow(DeflateWindow&&) = default;
 
     void clear(size_t begin = 0) { next = buffer + begin; }
+
+    wsize_t capacity() const
+    {
+        assert(buffer_end >= buffer);
+        return buffer_end - buffer;
+    }
 
     wsize_t size() const
     {
@@ -203,8 +176,8 @@ struct DeflateWindow
 
     bool notify_end_block(InputStream& in_stream) const { return true; }
 
-    char_t* const buffer;           /// Allocated output buffer
-    const char_t* const buffer_end; /// Past the end pointer
+    char_t* buffer;           /// Allocated output buffer
+    char_t* const buffer_end; /// Past the end pointer
     char_t* next;                   /// Next char_t to be written
 
   protected:
@@ -252,17 +225,26 @@ class AsciiOnly : public _Base
 };
 
 template<typename _Base = DeflateWindow<>>
-class DummyContext : public _Base
+class NoFlush : public _Base
 {
     using Base = _Base;
 
   public:
     using Base::Base;
     using typename Base::wsize_t;
+    wsize_t flush(wsize_t = 0) { return 0; }
+};
+
+template<typename _Base = DeflateWindow<>>
+class DummyContext : public NoFlush<_Base>
+{
+    using Base = NoFlush<_Base>;
+
+  public:
+    using Base::Base;
+    using typename Base::wsize_t;
 
     void clear(wsize_t begin = 0) { Base::clear(begin + this->context_size); }
-
-    wsize_t flush(wsize_t = 0) { return 0; }
 };
 
 template<typename _Base = DeflateWindow<>, typename _Base::char_t unknown_fill = typename _Base::char_t('?')>
@@ -294,8 +276,9 @@ class SymbolicDummyContext : public DummyContext<_Base>
     static_assert(size_t(Base::max_value) + size_t(Base::context_size) + 1 <= size_t(std::numeric_limits<char_t>::max()),
                   "Not enough value space in char_t to encode context symbols");
 
-    SymbolicDummyContext()
-      : Base()
+    template<typename... Args>
+    SymbolicDummyContext(Args&&... args)
+      : Base(std::forward<Args>(args)...)
     {
         for (wsize_t i = 0; i < this->context_size; i++)
             this->buffer[i] = char_t(i) + this->max_value + 1;

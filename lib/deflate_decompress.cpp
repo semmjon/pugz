@@ -49,6 +49,7 @@
 #include <pthread.h>
 
 #include "assert.hpp"
+#include "unistd.h"
 
 #include "input_stream.hpp"
 #include "decompressor.hpp"
@@ -235,7 +236,7 @@ to_cstr(block_result result)
 }
 
 /* return true if block decompression went smoothly, false if not (probably due to corrupt data) */
-template<typename OutWindow, typename might = ShouldSucceed>
+template<typename OutWindow = DeflateWindow<>, typename might = ShouldSucceed>
 inline block_result
 do_block(struct libdeflate_decompressor* restrict main_d, InputStream& in_stream, OutWindow& out, const might& might_tag = {})
 {
@@ -350,10 +351,55 @@ do_block(struct libdeflate_decompressor* restrict main_d, InputStream& in_stream
     }
 }
 
+#include <sys/mman.h>
+template<typename T>
+void
+madvise_huge(const T* ptr, size_t n, int line = __builtin_LINE())
+{
+    size_t twomegminus1 = (2UL << 20) - 1;
+
+    auto iptr_start = reinterpret_cast<intptr_t>(ptr);
+    iptr_start = (iptr_start + twomegminus1) & ~twomegminus1;
+
+    auto iptr_stop = (iptr_start + sizeof(T) * n) & ~twomegminus1;
+
+    fprintf(stderr,
+            "%d: madvise_huge(%p, 0x%lx) => madvise(%p, 0x%lx, HUGEPAGE)=%d\n",
+            line,
+            ptr,
+            n,
+            reinterpret_cast<void*>(iptr_start),
+            iptr_stop - iptr_start,
+            madvise(reinterpret_cast<void*>(iptr_start), iptr_stop - iptr_start, /*MADV_HUGEPAGE*/ 14));
+}
+
+template<typename T>
+struct free_deleter
+{
+    void operator()(T* ptr) { free(ptr); }
+};
+
+template<typename T>
+using malloc_unique_ptr = std::unique_ptr<T, free_deleter<T>>;
+
+template<typename T>
+malloc_unique_ptr<T>
+alloc_huge(size_t n)
+{
+    T* ptr;
+    if (posix_memalign(reinterpret_cast<void**>(&ptr), 2UL << 20, sizeof(T) * n) != 0)
+        throw std::bad_alloc();
+
+    madvise_huge(ptr, n);
+
+    return malloc_unique_ptr<T>(ptr);
+}
+
 // FIXME: split this function such that InputStreams are backuped on the stack instead of manually
 template<typename Window>
-inline std::pair<Window, size_t>
+size_t
 do_skip(struct libdeflate_decompressor* restrict d,
+        SymbolicDummyContext<Window>& out_window,
         InputStream& in_stream,
         const size_t skip = 0,
         const unsigned nb_valid_blocks_confirm = 8,
@@ -362,10 +408,9 @@ do_skip(struct libdeflate_decompressor* restrict d,
 )
 {
     if (skip == 0)
-        return { Window(), size_t(0) };
+        return 0;
     in_stream.skip(skip);
 
-    SymbolicDummyContext<Window> out_window;
     using char_t = typename Window::char_t;
 
     size_t bits_skipped = 0;
@@ -389,7 +434,7 @@ do_skip(struct libdeflate_decompressor* restrict d,
             // Now we try to fill the window from this position untill overflow:
             char_t* backup_next = out_window.next;
             InputStream backup_in = cur_in;
-            for (unsigned trial = 0; trial < nb_valid_blocks_confirm || res != block_result::SUCCESS;
+            for (unsigned trial = 0; trial < nb_valid_blocks_confirm && res == block_result::SUCCESS;
                  trial++, backup_next = out_window.next, backup_in = cur_in) {
                 res = do_block(d, cur_in, out_window, ShouldSucceed{});
             }
@@ -406,7 +451,7 @@ do_skip(struct libdeflate_decompressor* restrict d,
                     in_stream = cur_in;
                 }
 
-                return { std::move(out_window), first_block_pos };
+                return first_block_pos;
             } else {
                 fprintf(stderr,
                         "False positive sync: (code %s)\n"
@@ -456,12 +501,15 @@ print_block_boundaries(struct libdeflate_decompressor* restrict d,
     on_boundary(InputStream(cur_in));
 }
 
-template<typename Window>
+template<typename Window, typename Predicate>
 inline block_result
-decompress_loop(struct libdeflate_decompressor* restrict d, InputStream& in_stream, Window& window, synchronizer* stop)
+decompress_loop(struct libdeflate_decompressor* restrict d, InputStream& in_stream, Window& window, Predicate&& predicate)
 {
+    block_result res = block_result::SUCCESS;
     for (;;) {
-        block_result res = do_block(d, in_stream, window, ShouldSucceed{});
+        if (unlikely(predicate()))
+            return res;
+        res = do_block(d, in_stream, window, ShouldSucceed{});
         if (unlikely(res != block_result::SUCCESS)) {
             if (res == block_result::WINDOW_OVERFLOW || res == block_result::LAST_BLOCK)
                 return res;
@@ -469,74 +517,264 @@ decompress_loop(struct libdeflate_decompressor* restrict d, InputStream& in_stre
             fprintf(stderr, "Block error: %s\n", to_cstr(res));
             std::abort();
         }
-        if (unlikely(stop && stop->caught_up_block(in_stream.position_bits())))
-            return res;
     }
 }
+
+// template<typename Window> __attribute__((hot))
+// inline void translate_with_context(const char*restrict context, const typename Window::char_t *restrict in, char *restrict out, size_t n) {
+//    for (unsigned i = 0; i < n; i++) {
+//        typename Window::char_t val = in[i];
+//        if (likely(val <= Window::max_value)) {
+//            out[i] = char(val);
+//        } else {
+//            unsigned backref_pos = val - (Window::max_value + 1);
+//            assert(backref_pos < (1U << 15));
+//            out[i] = context[backref_pos];
+//        }
+//    }
+//}
+
+// template<typename Window> __attribute__((hot))
+// inline void translate_with_context(const char*restrict context, const typename Window::char_t *restrict in, char *restrict out, size_t n) {
+//    const typename Window::char_t* end = in + n;
+//    do {
+//        *out++ = context[*in++];
+//    } while(in < end);
+//}
+
+template<typename Window>
+__attribute__((hot)) inline void
+translate_with_context(const uint8_t* restrict context, const typename Window::char_t* restrict in, uint8_t* restrict out, size_t n)
+{
+    const typename Window::char_t* end = in + n;
+    for (size_t i = 0; i < n; i++) {
+        out[i] = context[in[i]];
+    }
+}
+
+template<typename Window>
+inline std::unique_ptr<uint8_t[]>
+make_context_lkt(const Window& window, const std::unique_ptr<uint8_t[]>& prev_ctx = {})
+{
+    auto context_size = window.context_size;
+    auto max_value = window.max_value;
+
+    std::unique_ptr<uint8_t[]> context_lkt(new uint8_t[max_value + context_size]);
+    for (unsigned i = 0; i <= max_value; i++)
+        context_lkt[i] = uint8_t(i);
+
+    if (prev_ctx) {
+        translate_with_context<Window>(prev_ctx.get(), window.next - context_size, context_lkt.get() + max_value + 1, context_size);
+    } else {
+        assert(sizeof(typename Window::char_t) == 1);
+        memcpy(context_lkt.get() + max_value + 1, window.next - context_size, context_size);
+    }
+    return context_lkt;
+}
+
+template<typename NarrowWindow = DeflateWindow<uint8_t>>
+struct BackrefMultiplexer
+{
+
+    using narrow_t = typename NarrowWindow::char_t;
+
+    static constexpr narrow_t first_backref_symbol = NarrowWindow::max_value + 1;
+    static constexpr narrow_t max_representable_backrefs = std::numeric_limits<narrow_t>::max() - NarrowWindow::max_value;
+    static_assert(max_representable_backrefs == 129); // FIXME: for narrow_t = uint8_t.  Should be generalizable
+
+    BackrefMultiplexer()
+      : lkt(new unsigned[max_representable_backrefs])
+      , rewritten_context(new narrow_t[NarrowWindow::context_size])
+    {}
+
+    template<typename WideWindow = DeflateWindow<uint16_t>>
+    bool compress_backref_symbols(const WideWindow& input_context, NarrowWindow& output_context)
+    {
+        static_assert(NarrowWindow::context_size == WideWindow::context_size, "Both window should have the same context size");
+        using wide_t = typename WideWindow::char_t;
+        assert(rewritten_context);
+
+        allocated_symbols = 0;
+        narrow_t* restrict output_p = rewritten_context.get();
+        for (wide_t* restrict input_p = input_context.next - input_context.context_size; input_p < input_context.next; input_p++) {
+            wide_t c_from = *input_p;
+            narrow_t c_to = narrow_t(0);
+            if (c_from <= input_context.max_value) {
+                c_to = narrow_t(c_from); // An in range (resolved) character
+            } else {                     // Or a backref
+                // c_from -= WideWindow::max_value + 1;
+                // Linear scan looking for an already allocated backref symbol
+                for (unsigned i = 0; i < allocated_symbols; i++) {
+                    if (lkt[i] == c_from) {
+                        c_to = narrow_t(first_backref_symbol + i);
+                        assert(c_to != narrow_t(0));
+                        break;
+                    }
+                }
+                if (c_to == narrow_t(0)) { // Not found
+                    // Try to allocate a new symbol
+                    if (allocated_symbols < max_representable_backrefs) {
+                        c_to = narrow_t(first_backref_symbol + allocated_symbols);
+                        lkt[allocated_symbols++] = c_from;
+                    } else { // We exceeded the range of available brackrefs symbols
+                        return false;
+                    }
+                }
+            }
+            *output_p++ = c_to;
+        }
+
+        // All the context is now converted: let's copy it back to the output_context Window
+        memcpy(output_context.next, rewritten_context.get(), sizeof(narrow_t) * NarrowWindow::context_size);
+        output_context.next += NarrowWindow::context_size;
+
+        // Release memory of the scratch buffer
+        rewritten_context = nullptr;
+
+        return true;
+    }
+
+    std::unique_ptr<narrow_t[]> context_to_lkt(narrow_t* restrict context)
+    {
+        unsigned range = unsigned(std::numeric_limits<narrow_t>::max()) + 1;
+        auto res = std::unique_ptr<narrow_t[]>(new narrow_t[range]);
+
+        unsigned i = 0;
+        for (; i < first_backref_symbol; i++) {
+            res[i] = narrow_t(i);
+        }
+
+        for (; i < range; i++) {
+            res[i] = context[lkt[i - first_backref_symbol]];
+        }
+
+        return res;
+    }
+
+    std::unique_ptr<unsigned[]> lkt;
+    std::unique_ptr<narrow_t[]> rewritten_context;
+    unsigned allocated_symbols = 0;
+};
+
+static constexpr bool benchmark = true;
 
 void
 decompress_chunks(struct libdeflate_decompressor* restrict d,
                   InputStream in_stream,
                   size_t skip,
                   synchronizer* stop,     // indicating where to stop
-                  synchronizer* prev_sync // for passing our first extracted sequence coordinate to the previous thread
+                  synchronizer& prev_sync // for passing our first extracted sequence coordinate to the previous thread
 )
 {
     using backref_char_t = uint16_t;
-    using Window = AsciiOnly<DeflateWindow<backref_char_t, 21>>;
+    using Window = AsciiOnly<NoFlush<DeflateWindow<backref_char_t>>>;
+    using NarrowWindow = AsciiOnly<NoFlush<DeflateWindow<uint8_t>>>;
 
-    auto pair = do_skip<Window>(d, in_stream, skip);
-    Window& window = pair.first;
-    size_t first_block_bit_pos = pair.second;
+    size_t buffer_size = 1UL << 31;
+    auto buffer = alloc_huge<backref_char_t>(buffer_size);
 
-    if (prev_sync) {
-        prev_sync->signal_first_decoded_sequence(first_block_bit_pos, 0);
-        fprintf(stderr, "Thread %lu synced at %lubits\n", skip, first_block_bit_pos);
+    SymbolicDummyContext<Window> sym_window(buffer.get(), buffer_size);
+    size_t first_block_bit_pos = do_skip<Window>(d, sym_window, in_stream, skip);
+    Window& window = sym_window;
+
+    BackrefMultiplexer<NarrowWindow> multiplexer{};
+    NarrowWindow narrow_window(reinterpret_cast<uint8_t*>(window.next),
+                               reinterpret_cast<const uint8_t*>(window.buffer_end) - reinterpret_cast<uint8_t*>(window.next));
+
+    prev_sync.signal_first_decoded_sequence(first_block_bit_pos, 0);
+    fprintf(stderr, "Thread %lu synced at %lubits\n", skip, first_block_bit_pos);
+
+    unsigned block_count = 0;
+    if (decompress_loop(d, in_stream, window, [&]() {
+            if (block_count % 1 == 0) {
+                narrow_window.buffer = reinterpret_cast<uint8_t*>(window.next - window.context_size);
+                narrow_window.clear();
+                if (multiplexer.compress_backref_symbols(window, narrow_window))
+                    return true;
+            }
+            return stop && stop->caught_up_block(in_stream.position_bits());
+        }) == block_result::WINDOW_OVERFLOW) {
+        fprintf(stderr, "File too big to be decompressed ! (first block)\n");
+        abort();
     }
 
-    // No need to do more block since do_skip filled the window:
-    decompress_loop(d, in_stream, window, stop);
+    if (decompress_loop(d, in_stream, narrow_window, [&]() { return stop && stop->caught_up_block(in_stream.position_bits()); }) ==
+        block_result::WINDOW_OVERFLOW) {
+        fprintf(stderr, "File too big to be decompressed ! (first block)\n");
+        abort();
+    }
+
+    synchronizer::context_ptr context = prev_sync.get_context();
+
+    assert(narrow_window.next - narrow_window.context_size > narrow_window.buffer);
+
+    write(1, narrow_window.next - narrow_window.context_size, narrow_window.context_size);
+    putc('\n', stdout);
+    auto lkt = multiplexer.context_to_lkt(context.get());
+    for (uint8_t* p = narrow_window.next - narrow_window.context_size; p < narrow_window.next; p++)
+        *p = lkt[*p];
+
+    write(1, narrow_window.next - narrow_window.context_size, narrow_window.context_size);
+    putc('\n', stdout);
 
     fprintf(stderr, "Thread %lu ended at %lubits\n", skip, in_stream.position_bits());
 
-    if (prev_sync)
-        prev_sync->with_context([&](unsigned char* context) {
-            fprintf(stderr, "Thread %lu got context\n", skip);
+    //    synchronizer::context_ptr context = prev_sync.get_context();
+    //    fprintf(stderr, "Thread %lu got context\n", skip);
 
-            // First, translate our context to pass it to the next thread ASAP
-            unsigned char next_context[Window::context_size];
-            for (unsigned i = 0; i < Window::context_size; i++) {
-                backref_char_t p = *(window.next - Window::context_size + i);
-                if (likely(p <= Window::max_value)) {
-                    next_context[i] = p;
-                } else {
-                    unsigned backref_pos = p - (Window::max_value + 1);
-                    assert(backref_pos < (1U << 15));
-                    next_context[i] = context[backref_pos];
-                }
-            }
+    //    // First, translate our context to pass it to the next thread ASAP
+    //    if(stop) {
+    //        stop->post_context(make_context_lkt(window, context));
+    //    }
 
-            fwrite(next_context, 1, 1U << 15, stderr);
-            fputc('\n', stderr);
+    //    if(!benchmark)
+    //        prev_sync.wait_output();
 
-            if (stop) // FIXME: should guard the whole next_context computation
-                stop->post_context(next_context);
-        });
+    //    static constexpr Window::wsize_t output_buffer_size = 1 << 20;
+    //    synchronizer::context_ptr outut_buffer(new char[output_buffer_size]);
+    //    for(Window::char_t* p = window.buffer + window.context_size ; p < window.next ; p+=output_buffer_size) {
+    //        auto n = std::min(window.next - p, ssize_t(output_buffer_size));
+    //        translate_with_context<Window>(context.get(), p, outut_buffer.get(), n);
+    //        if(!benchmark)
+    //        if(write(1, outut_buffer.get(), n) != n) {
+    //            fprintf(stderr, "write error\n");
+    //            std::abort();
+    //        }
+    //    }
+
+    //    if(!benchmark && stop)
+    //        stop->signal_output();
 }
 
 void
 decompress_first_chunk(struct libdeflate_decompressor* restrict d, InputStream in_stream, synchronizer* stop)
 {
     using char_t = unsigned char;
-    using Window = AsciiOnly<DeflateWindow<char_t, 21>>;
+    using Window = AsciiOnly<NoFlush<DeflateWindow<char_t>>>;
 
-    Window window;
+    size_t buffer_size = 1UL << 31;
+    auto buffer = alloc_huge<char_t>(buffer_size);
+    Window window(buffer.get(), buffer_size);
 
-    decompress_loop(d, in_stream, window, stop);
+    if (decompress_loop(d, in_stream, window, [&]() { return stop && stop->caught_up_block(in_stream.position_bits()); }) == block_result::WINDOW_OVERFLOW) {
+        fprintf(stderr, "File too big to be decompressed ! (first block)\n");
+        abort();
+    }
+
     fprintf(stderr, "Thread 0 ended at %lubits\n", in_stream.position_bits());
 
-    if (stop)
-        stop->post_context(window.next - window.context_size);
+    if (stop) {
+        stop->post_context(make_context_lkt(window));
+    }
+
+    if (!benchmark)
+        if (write(1, window.buffer, window.size()) != ssize_t(window.size())) {
+            fprintf(stderr, "write error");
+            abort();
+        }
+
+    if (!benchmark && stop)
+        stop->signal_output();
 }
 
 } /* namespace */
@@ -555,12 +793,17 @@ libdeflate_deflate_decompress(struct libdeflate_decompressor* restrict d,
                               size_t skip,
                               size_t until)
 {
+    fprintf(stderr, "madvise=%d\n", madvise((void*)((intptr_t)(in + 4095) & ~intptr_t(4095)), in_nbytes & ~intptr_t(4095), MADV_SEQUENTIAL));
+    madvise_huge(in, in_nbytes);
+
     InputStream in_stream(in, in_nbytes);
 
     fprintf(stderr, "Thread %lu started\n", skip);
     if (skip == 0)
         decompress_first_chunk(d, in_stream, stop);
-    else
-        decompress_chunks(d, in_stream, skip, stop, prev_sync);
+    else {
+        assert(prev_sync);
+        decompress_chunks(d, in_stream, skip, stop, *prev_sync);
+    }
     return LIBDEFLATE_SUCCESS;
 }
