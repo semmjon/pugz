@@ -216,7 +216,7 @@ xopen_for_read(const tchar* path, bool symlink_ok, struct file_stream* strm)
     }
 
 #if defined(HAVE_POSIX_FADVISE) && (O_SEQUENTIAL == 0)
-    posix_fadvise(strm->fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+    // posix_fadvise(strm->fd, 0, 0, POSIX_FADV_SEQUENTIAL);
 #endif
 
     return 0;
@@ -361,7 +361,7 @@ map_file_contents(struct file_stream* strm, u64 size)
     }
 
 #    ifdef HAVE_POSIX_MADVISE
-    posix_madvise(strm->mmap_mem, size, POSIX_MADV_SEQUENTIAL);
+    // posix_madvise(strm->mmap_mem, size, POSIX_MADV_SEQUENTIAL);
 #    endif
     strm->mmap_token = strm; /* anything that's not NULL */
 
@@ -441,16 +441,4 @@ xclose(struct file_stream* strm)
     strm->fd       = -1;
     strm->name     = NULL;
     return ret;
-}
-
-/* Allocate a new DEFLATE decompressor */
-struct libdeflate_decompressor*
-alloc_decompressor(void)
-{
-    struct libdeflate_decompressor* d;
-
-    d = libdeflate_alloc_decompressor();
-    if (d == NULL) msg_errno("Unable to allocate decompressor");
-
-    return d;
 }

@@ -95,6 +95,12 @@
 #    define bswap64 __builtin_bswap64
 #endif
 
+#if GCC_PREREQ(4, 3) || __has_builtin(__builtin_LINE)
+#    define builtin_LINE __builtin_LINE
+#else
+#    define builtin_LINE ([]() { return 0; })
+#endif
+
 /* With gcc, we can access unaligned memory through 'packed' structures. */
 #define DEFINE_UNALIGNED_TYPE(type)                                                                                    \
                                                                                                                        \

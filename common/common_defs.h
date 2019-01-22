@@ -262,6 +262,7 @@ static forceinline u64
 #        define PRINT_DEBUG(...)                                                                                       \
             {                                                                                                          \
                 fprintf(stderr, __VA_ARGS__);                                                                          \
+                fflush(stderr);                                                                                        \
             }
 #    else
 #        undef PRINT_DEBUG
@@ -269,15 +270,16 @@ static forceinline u64
             {}
 #    endif
 
-#    if defined(DEBUG_FIRST_BLOCK) && DEBUG_FIRST_BLOCK
-#        undef DEBUG_FIRST_BLOCK
-#        define DEBUG_FIRST_BLOCK(x)                                                                                   \
+#    if defined(PRINT_DEBUG_DECODING) && PRINT_DEBUG_DECODING
+#        undef PRINT_DEBUG_DECODING
+#        define PRINT_DEBUG_DECODING(x)                                                                                \
             {                                                                                                          \
-                x                                                                                                      \
+                fprintf(stderr, __VA_ARGS__);                                                                          \
+                fflush(stderr);                                                                                        \
             }
 #    else
-#        undef DEBUG_FIRST_BLOCK
-#        define DEBUG_FIRST_BLOCK(x)                                                                                   \
+#        undef PRINT_DEBUG_DECODING
+#        define PRINT_DEBUG_DECODING(x)                                                                                \
             {}
 #    endif
 

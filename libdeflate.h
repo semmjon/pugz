@@ -219,7 +219,7 @@ enum libdeflate_result {
  *     nonzero result code if decompression failed for another reason.
  */
 
-class synchronizer;
+struct synchronizer;
 
 LIBDEFLATEAPI enum libdeflate_result
 libdeflate_deflate_decompress(

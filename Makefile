@@ -9,8 +9,6 @@
 #
 # Define DISABLE_GZIP to disable support for the gzip wrapper format.
 #
-# Define DISABLE_ZLIB to disable support for the zlib wrapper format.
-#
 ##############################################################################
 
 #### Common compiler flags.
@@ -45,7 +43,7 @@ ifeq ($(debug),1)
     asserts=1
     override CFLAGS += -O0 -ggdb
 else
-    override CFLAGS += -O4 -flto -march=native -mtune=native
+    override CFLAGS += -O4 -flto -march=native -mtune=native -g
 endif
 
 
@@ -61,8 +59,8 @@ ifeq ($(print_debug),1)
      LIB_CFLAGS+= -DPRINT_DEBUG=1
 endif
 
-ifeq ($(print_debug_first),1)
-     LIB_CFLAGS+= -DPRINT_DEBUG_FIRST=1
+ifeq ($(print_debug_decoding),1)
+     LIB_CFLAGS+= -DPRINT_DEBUG_DECODING=1
 endif
 
 # Compiling for Windows with MinGW?
@@ -112,12 +110,12 @@ SHARED_LIB := libdeflate$(SHARED_LIB_SUFFIX)
 
 LIB_CFLAGS += $(CFLAGS) -fvisibility=hidden -D_ANSI_SOURCE
 
-LIB_HEADERS := $(wildcard lib/*.h) $(wildcard lib/*.hpp)
+LIB_HEADERS := $(wildcard lib/*.h) $(wildcard lib/*.hpp) lib/deflate_decompress.cpp
 
 LIB_SRC :=
-LIB_SRC_CXX := lib/deflate_decompress.cpp
+LIB_SRC_CXX :=
 ifndef DISABLE_GZIP
-    LIB_SRC += lib/gzip_decompress.c
+    LIB_SRC_CXX += lib/gzip_decompress.cpp
 endif
 
 STATIC_LIB_OBJ := $(LIB_SRC:.c=.o)
@@ -192,10 +190,10 @@ $(PROG_OBJ): %.o: %.c $(PROG_COMMON_HEADERS) $(COMMON_HEADERS) .prog-cflags
 # test programs must be linked with zlib for doing comparisons.
 
 $(NONTEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ) $(STATIC_LIB)
-	$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+
+	$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+ -lrt
 
 $(TEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ) $(STATIC_LIB)
-	$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+ -lz
+	$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+ -lz -lrt
 
 ifdef HARD_LINKS
 # Hard link gunzip to gzip

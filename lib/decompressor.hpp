@@ -77,8 +77,6 @@ struct libdeflate_decompressor
 
     u32 offset_decode_table[OFFSET_ENOUGH];
 
-    libdeflate_decompressor* restrict static_decompressor;
-
     u16 working_space[2 * (DEFLATE_MAX_CODEWORD_LEN + 1) + DEFLATE_MAX_NUM_SYMS];
 };
 
@@ -595,31 +593,6 @@ prepare_static(struct libdeflate_decompressor* restrict d)
 
     assert(build_offset_decode_table(d, DEFLATE_NUM_LITLEN_SYMS, DEFLATE_NUM_OFFSET_SYMS, ShouldSucceed{}));
     assert(build_litlen_decode_table(d, DEFLATE_NUM_LITLEN_SYMS, DEFLATE_NUM_OFFSET_SYMS, ShouldSucceed{}));
-}
-
-LIBDEFLATEAPI struct libdeflate_decompressor*
-libdeflate_alloc_decompressor(void)
-{
-    auto d                 = new libdeflate_decompressor();
-    d->static_decompressor = new libdeflate_decompressor();
-    prepare_static(d->static_decompressor);
-    return d;
-}
-
-LIBDEFLATEAPI struct libdeflate_decompressor*
-libdeflate_copy_decompressor(libdeflate_decompressor* from)
-{
-    auto d                 = new libdeflate_decompressor(*from);
-    d->static_decompressor = new libdeflate_decompressor();
-    prepare_static(d->static_decompressor);
-    return d;
-}
-
-LIBDEFLATEAPI void
-libdeflate_free_decompressor(struct libdeflate_decompressor* d)
-{
-    delete d->static_decompressor;
-    delete d;
 }
 
 #endif // DECOMPRESSOR_HPP
