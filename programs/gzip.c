@@ -353,9 +353,9 @@ out_close_in:
 		tunlink(oldpath);
 out_free_paths:
 	if (newpath != path)
-		delete newpath;
+		delete[] newpath;
 	if (oldpath != path)
-		delete oldpath;
+		delete[] oldpath;
 	return ret;
 }
 
@@ -442,16 +442,10 @@ tmain(int argc, tchar *argv[])
 	}
 
 	ret = 0;
-    struct libdeflate_decompressor *d;
-
-    d = alloc_decompressor();
-    if (d == NULL)
-        return 1;
-
     for (i = 0; i < argc; i++)
-        ret |= -decompress_file(d, argv[i], &options);
+        ret |= -decompress_file(nullptr, argv[i], &options);
 
-    libdeflate_free_decompressor(d);
+
 
 	/*
 	 * If ret=0, there were no warnings or errors.  Exit with status 0.

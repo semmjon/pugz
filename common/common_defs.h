@@ -255,21 +255,30 @@ bswap64(u64 n)
 /*                             Debug macros                                   */
 /* ========================================================================== */
 
-#if defined(PRINT_DEBUG) && PRINT_DEBUG
-#  undef PRINT_DEBUG
-#  define PRINT_DEBUG(...) {fprintf(stderr, __VA_ARGS__);}
-#else
-#  undef PRINT_DEBUG
-#  define PRINT_DEBUG(...) {}
-#endif
+#    if defined(PRINT_DEBUG) && PRINT_DEBUG
+#        undef PRINT_DEBUG
+#        define PRINT_DEBUG(...)                                                                                                                               \
+            {                                                                                                                                                  \
+                fprintf(stderr, __VA_ARGS__);                                                                                                                  \
+                fflush(stderr);                                                                                                                                \
+            }
+#    else
+#        undef PRINT_DEBUG
+#        define PRINT_DEBUG(...)                                                                                                                               \
+            {}
+#    endif
 
-
-#if defined(DEBUG_FIRST_BLOCK) && DEBUG_FIRST_BLOCK
-#  undef DEBUG_FIRST_BLOCK
-#  define DEBUG_FIRST_BLOCK(x) {x}
-#else
-#  undef DEBUG_FIRST_BLOCK
-#  define DEBUG_FIRST_BLOCK(x) {}
-#endif
+#    if defined(PRINT_DEBUG_DECODING) && PRINT_DEBUG_DECODING
+#        undef PRINT_DEBUG_DECODING
+#        define PRINT_DEBUG_DECODING(x)                                                                                                                        \
+            {                                                                                                                                                  \
+                fprintf(stderr, __VA_ARGS__);                                                                                                                  \
+                fflush(stderr);                                                                                                                                \
+            }
+#    else
+#        undef PRINT_DEBUG_DECODING
+#        define PRINT_DEBUG_DECODING(x)                                                                                                                        \
+            {}
+#    endif
 
 #endif

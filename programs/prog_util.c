@@ -458,18 +458,3 @@ xclose(struct file_stream *strm)
 	return ret;
 }
 
-
-
-
-/* Allocate a new DEFLATE decompressor */
-struct libdeflate_decompressor *
-alloc_decompressor(void)
-{
-	struct libdeflate_decompressor *d;
-
-	d = libdeflate_alloc_decompressor();
-	if (d == NULL)
-		msg_errno("Unable to allocate decompressor");
-
-	return d;
-}

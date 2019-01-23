@@ -4,9 +4,11 @@
 #include <cstring> // memcpy
 #include <type_traits>
 
+#include "memory.hpp"
 #include "common_defs.h"
 #include "assert.hpp"
 #include "unaligned.h"
+#include "gzip_constants.h"
 
 /**
  * @brief Model an compressed gzip input stream
@@ -39,11 +41,10 @@ class InputStream
     using bitbuf_size_t = uint_fast32_t;
 
     /** State */
-    const byte* const begin;
-    const byte* restrict in_next;      /// Read pointer
-    const byte* restrict const in_end; /// Adress of the byte after input
-    bitbuf_t bitbuf = bitbuf_t(0);     /// Bit buffer
-    bitbuf_size_t bitsleft = 0;        /// Number of valid bits in the bit buffer
+    const byte* restrict in_next; /// Read pointer
+    span<const byte> data;
+    bitbuf_t bitbuf = bitbuf_t(0); /// Bit buffer
+    bitbuf_size_t bitsleft = 0;    /// Number of valid bits in the bit buffer
     bitbuf_size_t overrun_count = 0;
 
     /**
@@ -81,6 +82,7 @@ class InputStream
         bitbuf |= get_unaligned_leword(in_next) << bitsleft;
         in_next += (bitbuf_length - bitsleft) >> 3;
         bitsleft += (bitbuf_length - bitsleft) & ~7;
+        assert(bitsleft <= bitbuf_length);
     }
 
     /**
@@ -102,27 +104,108 @@ class InputStream
     inline void fill_bits_bytewise()
     {
         do {
-            if (likely(in_next != in_end))
+            if (likely(in_next != data.end()))
                 bitbuf |= bitbuf_t(*in_next++) << bitsleft;
             else
                 overrun_count++;
             bitsleft += 8;
         } while (bitsleft <= bitbuf_length - 8);
+        assert(bitsleft <= bitbuf_length);
     }
 
   public:
     InputStream(const byte* in, size_t len)
-      : begin(in)
-      , in_next(in)
-      , in_end(in + len)
+      : in_next(in)
+      , data(in, len)
     {}
+
+    bool consume_header()
+    {
+        align_input();
+        if (available() < GZIP_MIN_OVERHEAD)
+            return false;
+
+        const byte* p = in_next;
+        byte flg;
+
+        /* ID1 */
+        if (*p++ != GZIP_ID1)
+            return false;
+        /* ID2 */
+        if (*p++ != GZIP_ID2)
+            return false;
+        /* CM */
+        if (*p++ != GZIP_CM_DEFLATE)
+            return false;
+        flg = *p++;
+        /* MTIME */
+        p += 4;
+        /* XFL */
+        p += 1;
+        /* OS */
+        p += 1;
+
+        if (bool(flg & GZIP_FRESERVED))
+            return false;
+
+        /* Extra field */
+        if (bool(flg & GZIP_FEXTRA)) {
+            u16 xlen = get_unaligned_le16(p);
+            p += 2;
+
+            if (data.end() - p < (u32)xlen + GZIP_FOOTER_SIZE)
+                return false;
+
+            p += xlen;
+        }
+
+        /* Original file name (zero terminated) */
+        if (bool(flg & GZIP_FNAME)) {
+            while (*p++ != byte(0) && p != data.end())
+                ;
+            if (data.end() - p < GZIP_FOOTER_SIZE)
+                return false;
+        }
+
+        /* File comment (zero terminated) */
+        if (bool(flg & GZIP_FCOMMENT)) {
+            while (*p++ != byte(0) && p != data.end())
+                ;
+            if (data.end() - p < GZIP_FOOTER_SIZE)
+                return false;
+        }
+
+        /* CRC16 for gzip header */
+        if (bool(flg & GZIP_FHCRC)) {
+            p += 2;
+            if (data.end() - p < GZIP_FOOTER_SIZE)
+                return false;
+        }
+
+        in_next = p;
+        return true;
+    }
+
+    ssize_t consume_footer()
+    {
+        align_input();
+        if (reinterpret_cast<uintptr_t>(in_next) % alignof(u32) == 0 || available() < GZIP_FOOTER_SIZE)
+            return -1;
+
+        static_assert(sizeof(u32[2]) == GZIP_FOOTER_SIZE, "Gzip footer size doesn't match sizeof(u32[2])");
+        u32 footer[2];
+        memcpy(footer, in_next, GZIP_FOOTER_SIZE);
+        in_next += GZIP_FOOTER_SIZE;
+
+        return footer[1]; // decompressed size modulo 4GB
+    }
 
     InputStream(const InputStream&) = default;
 
     /// states asignments for the same stream (for backtracking)
     InputStream& operator=(const InputStream& from)
     {
-        assert(begin == from.begin && in_end == from.in_end);
+        assert(data == from.data);
 
         in_next = from.in_next;
         bitbuf = from.bitbuf;
@@ -134,19 +217,15 @@ class InputStream
     InputStream(InputStream&&) = default;
     InputStream& operator=(InputStream&&) = default;
 
-    size_t size() const
-    {
-        assert(in_end >= begin);
-        return in_end - begin;
-    }
+    size_t size() const { return data.size(); }
 
     /** Remaining available bytes
      * @note align_input() should be called first in order to get accurate readings (or use available_bits() / 8)
      */
     size_t available() const
     {
-        assert(in_end >= in_next);
-        return in_end - in_next;
+        assert(data.includes(in_next) || in_next == data.end());
+        return data.end() - in_next;
     }
 
     /// Remaining available bits
@@ -154,14 +233,33 @@ class InputStream
 
     /** Position in the stream in bits
      */
-    size_t position_bits() const { return 8 * (in_next - begin) - bitsleft; }
+    size_t position_bits() const { return 8 * (in_next - data.begin()) - bitsleft; }
+
+    bool set_position_bits(size_t bit_pos)
+    {
+        size_t bytes = bit_pos >> 3u;
+        size_t bits = bit_pos & 7;
+        in_next = data.begin() + bytes;
+        assert(data.includes(in_next));
+
+        if (unlikely(available() < sizeof(bitbuf_t)))
+            return false;
+
+        memcpy(&bitbuf, in_next, sizeof(bitbuf_t));
+        in_next += +sizeof(bitbuf_t);
+        bitbuf >>= bits;
+        bitsleft = bitbuf_length - bits;
+
+        assert(position_bits() == bit_pos);
+        return true;
+    }
 
     /// Seek forward
     void skip(size_t offset)
     {
         align_input();
-        assert(in_next + offset < in_end);
         in_next += offset;
+        assert(data.includes(in_next));
     }
 
     /**
@@ -173,15 +271,19 @@ class InputStream
     bool ensure_bits()
     {
         static_assert(n <= bitbuf_max_ensure, "Bit buffer is too small");
-        if (!have_bits(n)) {
-            if (unlikely(available() < 1))
-                return false; // This is not acceptable overrun
-            if (likely(available() >= sizeof(bitbuf_t)))
+        if (have_bits(n)) {
+            return true;
+        } else {
+            if (available() >= sizeof(bitbuf_t)) {
                 fill_bits_wordwise();
-            else
+                return true;
+            } else if (available() >= 1) {
                 fill_bits_bytewise();
+                return true;
+            } else {
+                return false; // This is not acceptable overrun
+            }
         }
-        return true;
     }
 
     /**

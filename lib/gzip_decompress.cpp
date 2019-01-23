@@ -35,6 +35,8 @@
 #include <vector>
 #include <thread>
 
+#include "deflate_decompress.cpp"
+
 template<typename T>
 bool
 is_set(T word, T flag)
@@ -116,49 +118,118 @@ libdeflate_gzip_decompress(struct libdeflate_decompressor* d,
             return LIBDEFLATE_BAD_DATA;
     }
 
-    // Estimate size:
-    size_t decoded_size = get_unaligned_le32(in_end - 4); // Size from footer (modulo 4GB)
-    decoded_size += size_t((in_end - in) * 3.2) & ~((1UL << 32) - 1);
-    // Compression ratio for the deflate stream
-    double compression_ratio = double(decoded_size) / double(in_end - in_next - 8);
-    PRINT_DEBUG("Deompressed size %lu, compression factor %f\n", decoded_size, compression_ratio);
-
-    nthreads = std::min(1 + unsigned(in_nbytes >> 23), nthreads);
-    if (nthreads <= 1) {
-        /* Compressed data  */
-        result = libdeflate_deflate_decompress(
-          d, in_next, in_end - GZIP_FOOTER_SIZE - in_next, out, out_nbytes_avail, actual_out_nbytes_ret, nullptr, nullptr, skip, until);
+    nthreads = std::min(1 + unsigned(in_nbytes >> 21), nthreads);
+    if (nthreads <= 1) { // FIXME
     } else {
         PRINT_DEBUG("Using %u threads\n", nthreads);
 
         std::vector<std::thread> threads;
+        std::vector<DeflateThreadBase*> deflate_threads(nthreads);
+
+        size_t n_ready = 0;
+        std::condition_variable ready;
+        std::mutex ready_mtx;
+
         threads.reserve(nthreads);
-        std::vector<synchronizer> syncs(nthreads - 1);
 
+        // FIXME: the gzip header code is duplicated inside the InputStream
+        // This section of code test that. The goal is to parse them from DeflateThread to handle multipart gzip file
+        InputStream in_stream2(in, in_end - in);
+        bool headerok = in_stream2.consume_header();
+        assert(headerok);
+        assert(in_stream2.position_bits() == 8 * (in_next - in));
 
-        size_t chunk_size = std::min(size_t(in_end - in_next - skip) / nthreads, size_t((1UL<<31)/3.5));
-        size_t first_chunk_size = chunk_size + (1UL << 22);
+        InputStream in_stream(in_next, in_end - GZIP_FOOTER_SIZE - in_next);
+
+        size_t in_size = in_end - GZIP_FOOTER_SIZE - in_next;
+
+        // Sections of file decompressed sequentially
+        size_t max_section_size = nthreads * (32ull << 20); // 32MB per thread
+        size_t section_size = std::min(max_section_size, in_size);
+        size_t n_sections = (in_size + section_size - 1) / section_size;
+        section_size = in_size / n_sections;
+
+        // Section are chunked to nethreads
+        size_t chunk_size = section_size / nthreads;
+        // The first thread is working with resolved context so its faster
+        size_t first_chunk_size = chunk_size + (1UL << 22); // FIXME: ratio instead of delta
         chunk_size = (nthreads * chunk_size - first_chunk_size) / (nthreads - 1);
 
         size_t start = skip;
         synchronizer* prev_sync = nullptr;
-        for (unsigned i = 0; i < nthreads; i++) {
-            synchronizer* stop = i < nthreads - 1 ? &syncs[i] : nullptr;
+        for (unsigned chunk_idx = 0; chunk_idx < nthreads; chunk_idx++) {
+            if (chunk_idx == 0) {
 
-            threads.emplace_back([=]() {
-                libdeflate_decompressor* local_d = libdeflate_copy_decompressor(d);
+                threads.emplace_back([&]() {
+                    DeflateThreadFirstBlock deflate_thread(in_stream);
+                    PRINT_DEBUG("chunk 0 is %p\n", &deflate_thread);
+                    {
+                        std::unique_lock<std::mutex> lock{ ready_mtx };
+                        deflate_threads[0] = &deflate_thread;
+                        n_ready++;
+                        ready.notify_all();
 
-                enum libdeflate_result local_result = libdeflate_deflate_decompress(
-                  local_d, in_next, in_end - GZIP_FOOTER_SIZE - in_next, out, out_nbytes_avail, actual_out_nbytes_ret, stop, prev_sync, start, until);
+                        while (n_ready != nthreads)
+                            ready.wait(lock);
+                    }
 
-                if (local_result != LIBDEFLATE_SUCCESS)
-                    exit(LIBDEFLATE_SUCCESS); // FIXME: use futures to pass result
+                    auto& prev_chunk = *deflate_threads[nthreads - 1];
 
-                libdeflate_free_decompressor(local_d);
-            });
+                    // First chunk of first section: no context needed
+                    deflate_thread.go(0);
 
-            prev_sync = stop;
-            start += i == 0 ? first_chunk_size : chunk_size;
+                    // First chunks of next sections get their contexts from the last chunk of the previous section
+                    for (unsigned section_idx = 1; section_idx < n_sections; section_idx++) {
+
+                        size_t resume_bitpos;
+                        { // Synchronization point
+                            auto ctx = prev_chunk.get_context();
+                            deflate_thread.set_initial_context(ctx.first);
+                            resume_bitpos = ctx.second;
+                        }
+                        PRINT_DEBUG("%p chunk 0 of section %u: [%lu, TBD[\n", &deflate_thread, section_idx, resume_bitpos);
+                        assert(resume_bitpos >= (section_idx - 1) * section_size * 8);
+                        deflate_thread.go(resume_bitpos);
+                    }
+                });
+            } else {
+                threads.emplace_back([&, chunk_idx]() {
+                    DeflateThreadRandomAccess deflate_thread{ in_stream };
+                    PRINT_DEBUG("chunk %u is %p\n", chunk_idx, &deflate_thread);
+                    {
+                        std::unique_lock<std::mutex> lock{ ready_mtx };
+                        deflate_threads[chunk_idx] = &deflate_thread;
+                        n_ready++;
+                        ready.notify_all();
+
+                        while (n_ready != nthreads)
+                            ready.wait(lock);
+
+                        deflate_thread.set_upstream(deflate_threads[chunk_idx - 1]);
+                    }
+
+                    const size_t chunk_offset_start = first_chunk_size + chunk_size * (chunk_idx - 1);
+                    const size_t chunk_offset_stop = first_chunk_size + chunk_size * chunk_idx;
+
+                    for (unsigned section_idx = 0; section_idx < n_sections; section_idx++) {
+                        const size_t section_offset = section_idx * section_size;
+                        const size_t start = section_offset + chunk_offset_start;
+                        const size_t stop = section_offset + chunk_offset_stop;
+
+                        if (chunk_idx == nthreads - 1) { // The last chunk must be bounded to the section end
+                            PRINT_DEBUG("%p chunk %u of section %u [%lu, %lu[\n", &deflate_thread, chunk_idx, section_idx, start * 8, stop * 8);
+                            deflate_thread.set_end_block(stop * 8);
+                        } else {
+                            PRINT_DEBUG("%p chunk %u of section %u [%lu, TBD[\n", &deflate_thread, chunk_idx, section_idx, start * 8);
+                        }
+
+                        deflate_thread.go(start * 8);
+                    }
+
+                    if (chunk_idx == nthreads - 1)    // No one will need the context from the last chunk of the last section
+                        deflate_thread.get_context(); // Releasing it will enable the imediate destruction of the DeflateThread
+                });
+            }
         }
 
         for (auto& thread : threads)
@@ -177,7 +248,7 @@ libdeflate_gzip_decompress(struct libdeflate_decompressor* d,
 
     in_next = in_end - GZIP_FOOTER_SIZE;
 
-    // Rayan: skipping those checks as we may not be decompressing the whole file
+// Rayan: skipping those checks as we may not be decompressing the whole file
 #if 0
 	/* CRC32 */
  	if (libdeflate_crc32(0, out, actual_out_nbytes) !=
