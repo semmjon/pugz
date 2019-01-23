@@ -9,8 +9,6 @@
 #
 # Define DISABLE_GZIP to disable support for the gzip wrapper format.
 #
-# Define DISABLE_ZLIB to disable support for the zlib wrapper format.
-#
 ##############################################################################
 
 #### Common compiler flags.
@@ -116,7 +114,7 @@ LIB_HEADERS := $(wildcard lib/*.h) $(wildcard lib/*.hpp)
 LIB_SRC :=
 LIB_SRC_CXX := lib/deflate_decompress.cpp
 ifndef DISABLE_GZIP
-    LIB_SRC += lib/gzip_decompress.c
+    LIB_SRC_CXX += lib/gzip_decompress.cpp
 endif
 
 STATIC_LIB_OBJ := $(LIB_SRC:.c=.o)

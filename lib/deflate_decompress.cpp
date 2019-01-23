@@ -354,7 +354,7 @@ do_block(struct libdeflate_decompressor* restrict main_d, InputStream& in_stream
 #include <sys/mman.h>
 template<typename T>
 void
-madvise_huge(const T* ptr, size_t n, int line = __builtin_LINE())
+madvise_huge(const T* ptr, size_t n, int line = builtin_LINE())
 {
     size_t twomegminus1 = (2UL << 20) - 1;
 
