@@ -415,7 +415,7 @@ class repeat_t
     repeat_t(FunctionType function)
       : function_(function)
     {}
-    void operator()()
+    forceinline void operator()()
     {
         function_(I);
         repeat_t<N, FunctionType, I + 1>{ function_ }();
@@ -431,11 +431,11 @@ class repeat_t<N, FunctionType, N>
 {
   public:
     repeat_t(FunctionType) {}
-    void operator()() {}
+    forceinline void operator()() {}
 };
 
 template<std::size_t N, typename FunctionType>
-void
+forceinline void
 repeat(FunctionType function)
 {
     repeat_t<N, FunctionType, 0>{ function }();
