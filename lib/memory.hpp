@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -225,6 +226,7 @@ class unique_span : private D
 
     unique_span() noexcept
       : _begin(nullptr)
+      , _end(nullptr)
     {}
 
     template<typename _D = D, typename = typename std::enable_if<std::is_nothrow_constructible<D, _D&&>::value>::type>
@@ -256,9 +258,9 @@ class unique_span : private D
     }
 
     unique_span(unique_span&& from) noexcept
-      : _begin(nullptr)
+      : D(std::move(from))
+      , _begin(nullptr)
       , _end(nullptr)
-      , D(std::move(from))
     {
         std::swap(_begin, from._begin);
         std::swap(_end, from._end);
@@ -269,7 +271,11 @@ class unique_span : private D
         std::swap(_begin, from._begin);
         std::swap(_end, from._end);
         *static_cast<D*>(this) = static_cast<D&&>(from);
+        return *this;
     }
+
+    unique_span(const unique_span&) = delete;
+    unique_span& operator=(const unique_span&) = delete;
 
     ~unique_span()
     {
@@ -435,5 +441,29 @@ alloc_mirrored(size_t n, const char* shm_name_base = nullptr)
 
     return { ptr, 2 * n };
 }
+
+template<typename Lockable = std::mutex>
+struct lock_releaser
+{
+    lock_releaser(std::unique_lock<Lockable>&& lock) noexcept
+      : _lock(std::move(lock))
+    {}
+
+    lock_releaser(lock_releaser&&) noexcept = default;
+    lock_releaser& operator=(lock_releaser&&) noexcept = default;
+
+    template<typename T>
+    void operator()(T*)
+    {
+        if (_lock.owns_lock())
+            _lock.unlock();
+    }
+
+  private:
+    std::unique_lock<Lockable> _lock;
+};
+
+template<typename T, typename Lockable = std::mutex>
+using locked_span = unique_span<T, lock_releaser<Lockable>>;
 
 #endif // MEMORY_HPP

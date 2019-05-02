@@ -30,7 +30,6 @@ throw_syserr(const char fmt[]...) // No variadic template, avoiding to generate 
         std::terminate();
     }
     _what.resize(static_cast<size_t>(size));
-    int size2 = vsnprintf(&_what.front(), _what.size() + 1, fmt, args);
 
     throw std::system_error(errcode, std::generic_category(), _what);
 }

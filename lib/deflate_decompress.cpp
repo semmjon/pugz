@@ -47,24 +47,26 @@
  */
 
 #include <climits>
-#include <bitset>
 #include <pmmintrin.h>
 
-#include <pthread.h>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
+
+#include <bitset>
 
 #include "common/exceptions.hpp"
-
 #include "memory.hpp"
-
 #include "assert.hpp"
-#include "unistd.h"
 
 #include "input_stream.hpp"
 #include "decompressor.hpp"
 
 #include "libdeflate.h"
 
-/// Monomorphic base for passing information accross threads
+/** The main class for the deflate decompression
+ * Holds the decompressor tables and the input stream, but not the deflate window or output buffers
+ */
 class DeflateParser
 {
   public:
@@ -369,13 +371,13 @@ class DeflateParser
   private:
     static inline struct libdeflate_decompressor make_static_decompressor()
     {
-        struct libdeflate_decompressor static_decompressor;
-        prepare_static(&static_decompressor);
-        return static_decompressor;
+        struct libdeflate_decompressor sd;
+        prepare_static(&sd);
+        return sd;
     }
 
     static libdeflate_decompressor static_decompressor;
-    struct libdeflate_decompressor _decompressor;
+    struct libdeflate_decompressor _decompressor = {};
 };
 
 libdeflate_decompressor DeflateParser::static_decompressor = DeflateParser::make_static_decompressor();
@@ -441,6 +443,10 @@ repeat(FunctionType function)
 
 }
 
+/** Context window for a deflate parse
+ * Can be used with different symbols types, alllowing to handle symbolic backreferences
+ * The window buffer is wrapped using virtual memory mapping
+ */
 template<typename _char_t = char, unsigned _context_bits = 15>
 class Window
 {
@@ -472,11 +478,14 @@ class Window
 
     Window(Window&&) noexcept = default;
     Window& operator=(Window&&) noexcept = default;
+    Window(const Window&) = delete;
+    Window& operator=(const Window&) noexcept = delete;
 
     Window(const char* shm_name = nullptr)
       : _buffer(alloc_mirrored<char_t>(buffer_size, shm_name))
-      , waterline(_buffer.end() - headroom)
       , _midpoint(&_buffer[buffer_size])
+      , waterline(_buffer.end() - headroom)
+      , next(_midpoint)
     {
         clear();
     }
@@ -590,11 +599,13 @@ class Window
 
   protected:
     mmap_span<char_t> _buffer;
-    char_t* next;
-    const char_t* const waterline;
     char_t* const _midpoint;
+    const char_t* const waterline;
+    char_t* next;
 };
 
+/** A Dummy window checking the validity of the stream. Used for syncing
+ */
 struct DummyWindow
 {
     static constexpr unsigned context_bits = 15;
@@ -618,7 +629,7 @@ struct DummyWindow
     bool push(char_t c)
     {
         _size++;
-        return (char_t(c) <= max_value && char_t(c) >= min_value);
+        return (c <= max_value && c >= min_value);
     }
 
     /* return true if it's a reasonable offset, otherwise false */
@@ -646,6 +657,9 @@ struct DummyWindow
     size_t _size = 0;
 };
 
+/** Window that flush its content to a buffer
+ * Cache lines are flushed with streaming non-temporal instruction using the write combining buffer
+ */
 template<typename Base>
 class WindowToBuffer : public Base
 {
@@ -661,6 +675,9 @@ class WindowToBuffer : public Base
       : Base(std::forward<Args>(args)...)
       , _in_pos(Base::next)
     {}
+
+    WindowToBuffer(const WindowToBuffer&) = delete;
+    WindowToBuffer& operator=(const WindowToBuffer&) = delete;
 
     void clear(span<char_t> buffer)
     {
@@ -730,6 +747,8 @@ class WindowToBuffer : public Base
     span<char_t> _out = {};
 };
 
+/** Window for direct consumption of its content at flush time
+ */
 class WindowToConsumer : Window<uint8_t>
 {
   private:
@@ -748,6 +767,9 @@ class WindowToConsumer : Window<uint8_t>
       , _in_pos(Base::next)
     {}
 
+    WindowToConsumer(const WindowToConsumer&) = delete;
+    WindowToConsumer& operator=(const WindowToConsumer&) = delete;
+
     size_t flush()
     {
         span<const char_t> flushed = { _in_pos, Base::next };
@@ -765,6 +787,8 @@ class WindowToConsumer : Window<uint8_t>
     const char_t* _in_pos;
 };
 
+/** Compresses the 16bits backreference symbols into 8bit using a lookup-table
+ */
 template<typename NarrowWindow = Window<uint8_t>, typename WideWindow = Window<uint16_t>>
 struct BackrefMultiplexer
 {
@@ -788,7 +812,6 @@ struct BackrefMultiplexer
 
     size_t count_symbols(const WideWindow& input_context)
     {
-        using wide_t = typename WideWindow::char_t;
         std::bitset<1ULL << (sizeof(wide_t) * CHAR_BIT)> bs;
 
         for (narrow_t i = 0; i < first_backref_symbol; i++)
@@ -849,8 +872,6 @@ struct BackrefMultiplexer
 
     void check_compression(const WideWindow& input_context, NarrowWindow& compressed)
     {
-        using wide_t = typename WideWindow::char_t;
-
         auto* pcomp = compressed.current_context().begin();
         for (wide_t cin : input_context.current_context()) {
             assert(*pcomp < _allocated_symbols);
@@ -883,32 +904,8 @@ struct BackrefMultiplexer
     }
 
     unique_span<wide_t> lkt;
-    unsigned _allocated_symbols;
+    unsigned _allocated_symbols = 0;
 };
-
-template<typename Lockable = std::mutex>
-struct lock_releaser
-{
-    lock_releaser(std::unique_lock<Lockable>&& lock) noexcept
-      : _lock(std::move(lock))
-    {}
-
-    lock_releaser(lock_releaser&&) noexcept = default;
-    lock_releaser& operator=(lock_releaser&&) noexcept = default;
-
-    template<typename T>
-    void operator()(T*)
-    {
-        if (_lock.owns_lock())
-            _lock.unlock();
-    }
-
-  private:
-    std::unique_lock<Lockable> _lock;
-};
-
-template<typename T, typename Lockable = std::mutex>
-using locked_span = unique_span<T, lock_releaser<Lockable>>;
 
 class DeflateThreadRandomAccess;
 
@@ -929,14 +926,14 @@ class DeflateThreadBase : public DeflateParser
         // Signal that the context is used: the thread will be resumed once we release the lock
         _borrowed_context = false;
         _cond.notify_all();
-        PRINT_DEBUG("%p give context before block %lu\n", this, _in_stream.position_bits());
+        PRINT_DEBUG("%p give context before block %lu\n", (void*)this, _in_stream.position_bits());
         return { locked_span<uint8_t>{ context, std::move(lock) }, _in_stream.position_bits() };
     }
 
     /// Set the position of the first synced block upstream, so that this thread stops before this block */
     void set_end_block(size_t synced_pos)
     {
-        PRINT_DEBUG("%p set to stop after %lu\n", this, synced_pos);
+        PRINT_DEBUG("%p set to stop after %lu\n", (void*)this, synced_pos);
         _stop_after.store(synced_pos, std::memory_order_release);
     }
 
@@ -952,13 +949,13 @@ class DeflateThreadBase : public DeflateParser
             _cond.wait(lock);
 
         if (was_burrowed)
-            PRINT_DEBUG("%p get context burrow back\n", this);
+            PRINT_DEBUG("%p get context burrow back\n", (void*)this);
     }
 
     // Post context and wait for it to be consumed
     void set_context(span<uint8_t> ctx)
     {
-        PRINT_DEBUG("%p stoped at %lu\n", this, _in_stream.position_bits());
+        PRINT_DEBUG("%p stoped at %lu\n", (void*)this, _in_stream.position_bits());
         auto lock = std::unique_lock<std::mutex>(_mut);
         _context = ctx;
         _borrowed_context = true; // FIXME: wrong place
@@ -1004,6 +1001,9 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
       , buffer(alloc_huge<uint8_t>(buffer_virtual_size))
     {}
 
+    DeflateThreadRandomAccess(const DeflateThreadRandomAccess&) = delete;
+    DeflateThreadRandomAccess& operator=(const DeflateThreadRandomAccess&) = delete;
+
     ~DeflateThreadRandomAccess()
     {
         wait_for_context_borrow();
@@ -1033,13 +1033,10 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
                 continue;
             }
 
-            if (pos == 223421423)
-                printf("here we are");
-
             block_result res = do_block(dummy_win, ShouldFail{});
 
             if (unlikely(res == block_result::SUCCESS) && dummy_win.size() >= min_block_size) {
-                PRINT_DEBUG("%p Candidate block start at %lubits\n", this, pos);
+                PRINT_DEBUG("%p Candidate block start at %lubits\n", (void*)this, pos);
                 _in_stream.set_position_bits(pos);
                 _up_stream->set_end_block(pos);
                 return pos;
@@ -1050,6 +1047,7 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
                 return 8 * _in_stream.size();
             }
         }
+        return 8 * _in_stream.size();
     }
 
     void go(size_t skipbits)
@@ -1082,7 +1080,7 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
 
         span<uint8_t> narrow_buffer = wide_window.final_flush().reinterpret<uint8_t>();
         if (unlikely(narrow_buffer.empty() && res <= block_result::CAUGHT_UP_DOWNSTREAM)) // Not enough space for the final flush
-            res == block_result::FLUSH_FAIL;
+            res = block_result::FLUSH_FAIL;
         wide_buffer = { wide_buffer.begin(), wide_window.buf_ptr() };
 
         narrow_window.clear(narrow_buffer);
@@ -1147,17 +1145,20 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
     malloc_span<uint8_t> buffer;
     WindowToBuffer<Window<uint16_t>> wide_window = {};
     WindowToBuffer<Window<uint8_t>> narrow_window = {};
-    BackrefMultiplexer<Window<uint8_t>, Window<uint16_t>> multiplexer;
+    BackrefMultiplexer<Window<uint8_t>, Window<uint16_t>> multiplexer = {};
     DeflateThreadBase* _up_stream = nullptr;
-    void* consumer;
-    consumer_16bits_type consumer_16bits;
-    consumer_16bits_type consumer_8bits;
+    void* consumer = nullptr;
+    consumer_16bits_type consumer_16bits = nullptr;
+    consumer_16bits_type consumer_8bits = nullptr;
 };
 
 class DeflateThreadFirstBlock : public DeflateThreadBase
 {
   public:
     using DeflateThreadBase::DeflateThreadBase;
+
+    DeflateThreadFirstBlock(const DeflateThreadFirstBlock&) = delete;
+    DeflateThreadBase& operator=(const DeflateThreadFirstBlock&) = delete;
 
     void set_initial_context(span<uint8_t> context = {})
     {

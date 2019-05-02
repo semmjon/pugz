@@ -31,7 +31,6 @@
 #include "unaligned.h"
 
 #include "libdeflate.h"
-#include "synchronizer.hpp"
 #include <vector>
 #include <thread>
 
@@ -137,7 +136,7 @@ libdeflate_gzip_decompress(struct libdeflate_decompressor* d,
         InputStream in_stream2(in, in_end - in);
         bool headerok = in_stream2.consume_header();
         assert(headerok);
-        assert(in_stream2.position_bits() == 8 * (in_next - in));
+        assert(in_stream2.position_bits() == 8 * size_t(in_next - in));
 
         InputStream in_stream(in_next, in_end - GZIP_FOOTER_SIZE - in_next);
 
@@ -155,14 +154,12 @@ libdeflate_gzip_decompress(struct libdeflate_decompressor* d,
         size_t first_chunk_size = chunk_size + (1UL << 22); // FIXME: ratio instead of delta
         chunk_size = (nthreads * chunk_size - first_chunk_size) / (nthreads - 1);
 
-        size_t start = skip;
-        synchronizer* prev_sync = nullptr;
         for (unsigned chunk_idx = 0; chunk_idx < nthreads; chunk_idx++) {
             if (chunk_idx == 0) {
 
                 threads.emplace_back([&]() {
                     DeflateThreadFirstBlock deflate_thread(in_stream);
-                    PRINT_DEBUG("chunk 0 is %p\n", &deflate_thread);
+                    PRINT_DEBUG("chunk 0 is %p\n", (void*)&deflate_thread);
                     {
                         std::unique_lock<std::mutex> lock{ ready_mtx };
                         deflate_threads[0] = &deflate_thread;
@@ -187,7 +184,7 @@ libdeflate_gzip_decompress(struct libdeflate_decompressor* d,
                             deflate_thread.set_initial_context(ctx.first);
                             resume_bitpos = ctx.second;
                         }
-                        PRINT_DEBUG("%p chunk 0 of section %u: [%lu, TBD[\n", &deflate_thread, section_idx, resume_bitpos);
+                        PRINT_DEBUG("%p chunk 0 of section %u: [%lu, TBD[\n", (void*)&deflate_thread, section_idx, resume_bitpos);
                         assert(resume_bitpos >= (section_idx - 1) * section_size * 8);
                         deflate_thread.go(resume_bitpos);
                     }
@@ -195,7 +192,7 @@ libdeflate_gzip_decompress(struct libdeflate_decompressor* d,
             } else {
                 threads.emplace_back([&, chunk_idx]() {
                     DeflateThreadRandomAccess deflate_thread{ in_stream };
-                    PRINT_DEBUG("chunk %u is %p\n", chunk_idx, &deflate_thread);
+                    PRINT_DEBUG("chunk %u is %p\n", chunk_idx, (void*)&deflate_thread);
                     {
                         std::unique_lock<std::mutex> lock{ ready_mtx };
                         deflate_threads[chunk_idx] = &deflate_thread;
@@ -217,10 +214,10 @@ libdeflate_gzip_decompress(struct libdeflate_decompressor* d,
                         const size_t stop = section_offset + chunk_offset_stop;
 
                         if (chunk_idx == nthreads - 1) { // The last chunk must be bounded to the section end
-                            PRINT_DEBUG("%p chunk %u of section %u [%lu, %lu[\n", &deflate_thread, chunk_idx, section_idx, start * 8, stop * 8);
+                            PRINT_DEBUG("%p chunk %u of section %u [%lu, %lu[\n", (void*)&deflate_thread, chunk_idx, section_idx, start * 8, stop * 8);
                             deflate_thread.set_end_block(stop * 8);
                         } else {
-                            PRINT_DEBUG("%p chunk %u of section %u [%lu, TBD[\n", &deflate_thread, chunk_idx, section_idx, start * 8);
+                            PRINT_DEBUG("%p chunk %u of section %u [%lu, TBD[\n", (void*)&deflate_thread, chunk_idx, section_idx, start * 8);
                         }
 
                         deflate_thread.go(start * 8);

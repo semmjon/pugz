@@ -442,8 +442,9 @@ tmain(int argc, tchar *argv[])
 	}
 
 	ret = 0;
-    for (i = 0; i < argc; i++)
+    for (i = 0; i < argc; i++) {
         ret |= -decompress_file(nullptr, argv[i], &options);
+    }
 
 
 
