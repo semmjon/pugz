@@ -906,8 +906,8 @@ class DeflateThreadBase : public DeflateParser
         // Signal that the context is used: the thread will be resumed once we release the lock
         _borrowed_context = false;
         _cond.notify_all();
-        PRINT_DEBUG("%p give context before block %lu\n", (void*)this, _in_stream.position_bits());
-        return {locked_span<uint8_t>{context, std::move(lock)}, _in_stream.position_bits()};
+        PRINT_DEBUG("%p give context for block %lu\n", (void*)this, _stoped_at);
+        return {locked_span<uint8_t>{context, std::move(lock)}, _stoped_at};
     }
 
     /// Set the position of the first synced block upstream, so that this thread stops before this block */
@@ -935,8 +935,15 @@ class DeflateThreadBase : public DeflateParser
     void set_context(span<uint8_t> ctx)
     {
         PRINT_DEBUG("%p stoped at %lu\n", (void*)this, _in_stream.position_bits());
+#ifndef NDEBUG
+        for (uint8_t c : ctx) {
+            assert(c >= Window<uint8_t>::min_value && c <= Window<uint8_t>::max_value);
+        }
+#endif
+
         auto lock         = std::unique_lock<std::mutex>(_mut);
         _context          = ctx;
+        _stoped_at        = _in_stream.position_bits();
         _borrowed_context = true; // FIXME: wrong place
         _cond.notify_all();
     }
@@ -960,7 +967,8 @@ class DeflateThreadBase : public DeflateParser
     /* Members for synchronization and communication */
     std::mutex              _mut{};
     std::condition_variable _cond{};
-    std::atomic<size_t>     _stop_after       = {unset_stop_pos};
+    std::atomic<size_t>     _stop_after       = {unset_stop_pos}; // Where we should stop
+    size_t                  _stoped_at        = unset_stop_pos;   // Where we stopped
     span<uint8_t>           _context          = {};
     bool                    _borrowed_context = false;
 };
@@ -982,7 +990,7 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
     ~DeflateThreadRandomAccess()
     {
         wait_for_context_borrow();
-        PRINT_DEBUG("~DeflateThreadRandomAccess");
+        PRINT_DEBUG("~DeflateThreadRandomAccess\n");
     }
 
     void set_upstream(DeflateThreadBase* up_stream) { _up_stream = up_stream; }
@@ -1018,7 +1026,7 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
             }
 
             dummy_win.clear();
-            if (unlikely(!_in_stream.set_position_bits(pos + 1))) { return 8 * _in_stream.size(); }
+            if (unlikely(!_in_stream.set_position_bits(pos + 1))) { break; }
         }
         return 8 * _in_stream.size();
     }
@@ -1026,7 +1034,6 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
     void go(size_t skipbits)
     {
         assert(_up_stream != nullptr);
-        wait_for_context_borrow();
 
         size_t sync_bitpos = sync(skipbits);
         if (sync_bitpos >= 8 * _in_stream.size()) {
@@ -1048,6 +1055,8 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
         auto res = decompress_loop(wide_window, [&]() {
             block_count++;
             if (block_count <= 8 || block_count % 2 == 0) return false;
+
+            wait_for_context_borrow(); // the narrow_window is mutated from this point
             return multiplexer.compress_backref_symbols(wide_window, narrow_window);
         });
 
@@ -1057,9 +1066,8 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
             res = block_result::FLUSH_FAIL;
         wide_buffer = {wide_buffer.begin(), wide_window.buf_ptr()};
 
-        narrow_window.clear(narrow_buffer);
         if (res == block_result::SUCCESS) {
-
+            narrow_window.clear(narrow_buffer);
             res = this->decompress_loop(narrow_window, []() { return false; });
 
             narrow_buffer = {narrow_buffer.begin(), narrow_window.buf_ptr()};
@@ -1090,7 +1098,10 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
             }
 
         } else if (res == block_result::CAUGHT_UP_DOWNSTREAM || res == block_result::LAST_BLOCK) {
-            assert(false); // FIXME: not enough input to compress backref: we have to deal with the wide window only
+            assert(false); // FIXME: not enough input to compress backref: we have to translate the wide window into the
+                           // narrow_window to yield the next context
+            wait_for_context_borrow(); // the narrow_window is mutated from this point
+            narrow_window.clear(narrow_buffer);
             //        auto prev_ctx = _up_stream->get_context();
             //        auto my_ctx = wide_window.current_context();
             //        auto trans_ctx = std::make_unique<uint8_t[]>(narrow_window.context_size);
