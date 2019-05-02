@@ -170,20 +170,27 @@ libdeflate_gzip_decompress(struct libdeflate_decompressor* d,
                             ready.wait(lock);
                     }
 
-                    auto& prev_chunk = *deflate_threads[nthreads - 1];
+                    const byte* last_unmapped = details::round_up<details::huge_page_size>(in);
 
                     // First chunk of first section: no context needed
                     deflate_thread.go(0);
 
                     // First chunks of next sections get their contexts from the last chunk of the previous section
+                    auto& prev_chunk = *deflate_threads[nthreads - 1];
                     for (unsigned section_idx = 1; section_idx < n_sections; section_idx++) {
-
+                        // Get the context and position of the first block of the section
                         size_t resume_bitpos;
                         { // Synchronization point
                             auto ctx = prev_chunk.get_context();
                             deflate_thread.set_initial_context(ctx.first);
                             resume_bitpos = ctx.second;
                         }
+
+                        // Unmmap the part previously decompressed (free RSS, usefull for large files)
+                        const byte* unmap_end = details::round_down<details::huge_page_size>(in_next + resume_bitpos / 8);
+                        sys::check_ret(munmap(const_cast<byte*>(last_unmapped), unmap_end - last_unmapped), "munmap");
+                        last_unmapped = unmap_end;
+
                         PRINT_DEBUG("%p chunk 0 of section %u: [%lu, TBD[\n", (void*)&deflate_thread, section_idx, resume_bitpos);
                         assert(resume_bitpos >= (section_idx - 1) * section_size * 8);
                         deflate_thread.go(resume_bitpos);

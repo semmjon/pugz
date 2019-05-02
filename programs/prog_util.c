@@ -373,6 +373,8 @@ map_file_contents(struct file_stream *strm, u64 size)
 		return -1;
 	}
 
+    madvise(strm->mmap_mem, size, MADV_HUGEPAGE);
+
 #ifdef HAVE_POSIX_MADVISE
     //posix_madvise(strm->mmap_mem, size, POSIX_MADV_SEQUENTIAL);
 #endif
