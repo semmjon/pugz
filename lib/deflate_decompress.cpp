@@ -53,8 +53,6 @@
 #include <condition_variable>
 #include <atomic>
 
-#include <bitset>
-
 #include "common/exceptions.hpp"
 #include "memory.hpp"
 #include "assert.hpp"
@@ -165,6 +163,7 @@ class DeflateParser
             /* Pop the extra length bits and add them to the length base to
              * produce the full length.  */
             const u32 length = (entry >> HUFFDEC_LENGTH_BASE_SHIFT) + _in_stream.pop_bits(entry & HUFFDEC_EXTRA_LENGTH_BITS_MASK);
+            assert(length <= 258);
 
             /* The match destination must not end after the end of the
              * output buffer.  For efficiency, combine this check with the
@@ -180,7 +179,7 @@ class DeflateParser
                     assert(length <= window.available());
                 }
             }
-            assert(length > 0); // length == 0 => EOB case should be handled here
+            assert(length >= 3);
 
             // if we end up here, it means we're at a match
 
@@ -426,6 +425,7 @@ class repeat_t
     FunctionType function_;
 };
 
+// Unrolled loops through template recurssion
 template<std::size_t N, typename FunctionType>
 class repeat_t<N, FunctionType, N>
 {
@@ -604,7 +604,7 @@ class Window
     char_t* next;
 };
 
-/** A Dummy window checking the validity of the stream. Used for syncing
+/** A do nothing window for checking the validity of the stream while searching for a block during random access.
  */
 struct DummyWindow
 {
@@ -620,11 +620,9 @@ struct DummyWindow
 
     void clear() { _size = 0; }
 
-    wsize_t capacity() const { return -wsize_t(1); }
-
     wsize_t size() const { return _size; }
 
-    wsize_t available() const { return -u32(2); }
+    wsize_t available() const { return context_size; }
 
     bool push(char_t c)
     {
@@ -658,7 +656,7 @@ struct DummyWindow
 };
 
 /** Window that flush its content to a buffer
- * Cache lines are flushed with streaming non-temporal instruction using the write combining buffer
+ * Cache lines are flushed with streaming non-temporal store using the write combining buffer
  */
 template<typename Base>
 class WindowToBuffer : public Base
@@ -787,7 +785,7 @@ class WindowToConsumer : Window<uint8_t>
     const char_t* _in_pos;
 };
 
-/** Compresses the 16bits backreference symbols into 8bit using a lookup-table
+/** Compresses the 16bits back-references symbols into 8bits using a lookup-table
  */
 template<typename NarrowWindow = Window<uint8_t>, typename WideWindow = Window<uint16_t>>
 struct BackrefMultiplexer
@@ -810,23 +808,11 @@ struct BackrefMultiplexer
         }
     }
 
-    size_t count_symbols(const WideWindow& input_context)
-    {
-        std::bitset<1ULL << (sizeof(wide_t) * CHAR_BIT)> bs;
-
-        for (narrow_t i = 0; i < first_backref_symbol; i++)
-            bs.set(i);
-
-        for (auto& c : input_context.current_context())
-            bs.set(c);
-
-        return bs.count();
-    }
-
+    /* Given an input_context with backref encoded as max_value+1+offset on 16bits, try to write
+     * a 8bits context in output_context with backref encoded in [max_value+1, 255] through a lookup table
+     */
     bool compress_backref_symbols(const WideWindow& input_context, NarrowWindow& output_context)
     {
-        size_t nsymbols = count_symbols(input_context);
-
         assert(lkt);
 
         narrow_t next_symbol = first_backref_symbol;
@@ -835,9 +821,9 @@ struct BackrefMultiplexer
         for (wide_t c_from : input_context.current_context()) {
             narrow_t c_to;
             if (c_from < first_backref_symbol) {
-                c_to = narrow_t(c_from); // An in range (resolved) character
-            } else {                     // Or a backref indexing the initial (unknown) context
-                c_from -= first_backref_symbol;
+                c_to = narrow_t(c_from);        // An in range (resolved) character
+            } else {                            // Or a backref indexing the initial (unknown) context
+                c_from -= first_backref_symbol; // Get the back-ref offset
                 // Linear scan looking for an already allocated backref symbol
                 c_to = narrow_t(0);
                 for (unsigned i = first_backref_symbol; i < next_symbol; i++) {
@@ -850,7 +836,6 @@ struct BackrefMultiplexer
                 if (c_to == narrow_t(0)) { // Not found
                     // Try to allocate a new symbol
                     if (next_symbol == 0) { // wrapped arround at previous allocation
-                        assert(nsymbols > total_available_symbols);
                         return false;
                     }
                     c_to = narrow_t(next_symbol);
@@ -863,15 +848,13 @@ struct BackrefMultiplexer
         assert(output_p == output_context.current_context().end());
 
         _allocated_symbols = next_symbol != 0 ? next_symbol : total_available_symbols;
-
-        assert(nsymbols <= total_available_symbols);
         check_compression(input_context, output_context);
-
         return true;
     }
 
     void check_compression(const WideWindow& input_context, NarrowWindow& compressed)
     {
+#ifndef NDEBUG
         auto* pcomp = compressed.current_context().begin();
         for (wide_t cin : input_context.current_context()) {
             assert(*pcomp < _allocated_symbols);
@@ -883,8 +866,12 @@ struct BackrefMultiplexer
             pcomp++;
         }
         assert(pcomp == compressed.current_context().end());
+#endif
     }
 
+    /** Given a context (ie. a lkt: offset -> char) and the compression lkt (8bits code -> offset 16bit) computed by compress_backref_symbols,
+     * returns a lkt: 8bits code -> char
+     */
     unique_span<narrow_t> context_to_lkt(span<const narrow_t> context)
     {
         auto res = make_unique_span<narrow_t>(total_available_symbols);
@@ -903,11 +890,9 @@ struct BackrefMultiplexer
         return res;
     }
 
-    unique_span<wide_t> lkt;
+    unique_span<wide_t> lkt; // 8bits code -> offset 16bit
     unsigned _allocated_symbols = 0;
 };
-
-class DeflateThreadRandomAccess;
 
 /// Monomorphic base for passing information accross threads
 class DeflateThreadBase : public DeflateParser
@@ -944,12 +929,12 @@ class DeflateThreadBase : public DeflateParser
     void wait_for_context_borrow()
     {
         auto lock = std::unique_lock<std::mutex>(_mut);
-        bool was_burrowed = _borrowed_context;
+        bool was_borrowed = _borrowed_context;
         while (_borrowed_context)
             _cond.wait(lock);
 
-        if (was_burrowed)
-            PRINT_DEBUG("%p get context burrow back\n", (void*)this);
+        if (was_borrowed)
+            PRINT_DEBUG("%p get context borrow back\n", (void*)this);
     }
 
     // Post context and wait for it to be consumed
@@ -1057,12 +1042,13 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
 
         size_t sync_bitpos = sync(skipbits);
         if (sync_bitpos >= 8 * _in_stream.size()) {
-            assert(false); // FIXME
+            assert(false); // FIXME: Could not find a block in the region [skipbits, eof[
+            // We should let the previous thread terminate and do nothing perhaps ?
         }
 
         size_t stop_bitpos = get_stop_pos();
         if (stop_bitpos != unset_stop_pos && sync_bitpos >= stop_bitpos) {
-            assert(false); // FIXME
+            assert(false); // FIXME: We found our first block after where we are supposed to stop
         }
 
         size_t block_count = 0;
@@ -1106,9 +1092,12 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
 
                 write(STDOUT_FILENO, narrow_window.current_context().begin(), narrow_window.current_context().size());
             } else if (res == block_result::FLUSH_FAIL) {
-                assert(false); // FIXME
+                assert(false); // FIXME: buffer too small for input buffer_virtual_size = 128MiB for 32MiB of input => max compression ratio of 4x
+                // The simplest way to handle that is stop everything and retry with smaller sections/chunks
             } else {
-                assert(false); // FIXME
+                assert(false); // FIXME: find a way to popagate errors...
+                // At this point we have narrowed down the back-reference count to 126 and decoded more than 8 block, so it's really unlikely that the
+                // synchronisation is a false positive
             }
 
         } else if (res == block_result::CAUGHT_UP_DOWNSTREAM || res == block_result::LAST_BLOCK) {
@@ -1127,14 +1116,15 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
             //            }
             //        }
 
-            //        fflush(stdout);
+            //        flush(stdout);
 
-            //        write(0, trans_ctx.get(), narrow_window.context_size);
+            //        write(STDOUT_FILENO, trans_ctx.get(), narrow_window.context_size);
 
         } else if (res == block_result::FLUSH_FAIL) {
-            assert(false); // FIXME: buffer overflow
+            assert(false); // FIXME: buffer overflow, see above
         } else {
-            assert(false); // FIXME: find a way to popagate errors...
+            assert(false); // FIXME: parse error in the first block
+            // Maybe the synchronisation is a false positive and we should retry at sync_bitpos + 1
         }
     }
 
