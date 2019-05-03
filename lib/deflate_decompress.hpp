@@ -733,44 +733,41 @@ template<typename char_t> class SinkBuffer : public span<char_t>
     }
 };
 
-/** Window for direct consumption of its content at flush time
- */
-class WindowToConsumer : Window<uint8_t>
+// Virtual base class for pugz consumers
+class ConsumerInterface
 {
-  private:
-    using Base                              = Window<uint8_t>;
-    static constexpr size_t cache_line_size = details::cache_line_size;
-
   public:
-    using consumer_type = void (*)(void*, span<const uint8_t>);
-
-    using typename Base::char_t;
-    static_assert(cache_line_size % sizeof(char_t) == 0, "A integer number of char_t should fits in cache line");
-
-    template<typename... Args>
-    WindowToConsumer(Args&&... args)
-      : Base(std::forward<Args>(args)...)
-      , _in_pos(Base::next)
-    {}
-
-    WindowToConsumer(const WindowToConsumer&) = delete;
-    WindowToConsumer& operator=(const WindowToConsumer&) = delete;
-
-    size_t flush()
+    void set_chunk_idx(unsigned chunk_idx, bool is_last = false)
     {
-        span<const char_t> flushed = {_in_pos, Base::next};
-        consumer_fun(consumer_ptr, flushed);
+        _chunk_idx  = chunk_idx;
+        _last_chunk = is_last;
+    }
+    void set_section_idx(unsigned section_idx) { _section_idx = section_idx; }
 
-        Base::flush();
-        _in_pos = flushed.end();
-        return flushed.size();
+    unsigned chunk_idx() const { return _chunk_idx; }
+    unsigned section_idx() const { return _section_idx; }
+    bool     is_last_chunk() const { return _last_chunk; }
+
+    size_t operator()(span<const uint8_t> data)
+    {
+        flush(data, false);
+        return data.size();
     }
 
-    consumer_type consumer_fun;
-    void*         consumer_ptr;
+    // Flushes the already resolved context in ~32KB step, last indicates if this is the last of the chunk
+    virtual void flush(span<const uint8_t> data, bool last) = 0;
+    virtual void flush(span<uint16_t>      data16bits,
+                       span<const uint8_t> lkt16bits,
+                       span<uint8_t>       data8bits,
+                       span<const uint8_t> lkt8bits)
+      = 0;
+
+    virtual ~ConsumerInterface(){};
 
   private:
-    const char_t* _in_pos;
+    unsigned _chunk_idx   = 0;
+    unsigned _section_idx = 0;
+    bool     _last_chunk  = false;
 };
 
 /** Compresses the 16bits back-references symbols into 8bits using a lookup-table
@@ -1143,13 +1140,11 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
 
   private:
     malloc_span<uint8_t>                                  buffer;
-    Window<uint16_t>                                      wide_window     = {};
-    Window<uint8_t>                                       narrow_window   = {};
-    BackrefMultiplexer<Window<uint8_t>, Window<uint16_t>> multiplexer     = {};
-    DeflateThreadBase*                                    _up_stream      = nullptr;
-    void*                                                 consumer        = nullptr;
-    consumer_16bits_type                                  consumer_16bits = nullptr;
-    consumer_16bits_type                                  consumer_8bits  = nullptr;
+    Window<uint16_t>                                      wide_window   = {};
+    Window<uint8_t>                                       narrow_window = {};
+    BackrefMultiplexer<Window<uint8_t>, Window<uint16_t>> multiplexer   = {};
+    DeflateThreadBase*                                    _up_stream    = nullptr;
+    ConsumerInterface&                                    _consumer;
 };
 
 class DeflateThreadFirstBlock : public DeflateThreadBase
@@ -1196,7 +1191,144 @@ class DeflateThreadFirstBlock : public DeflateThreadBase
     }
 
   private:
-    Window<uint8_t> _window{};
+    Window<uint8_t>    _window = {};
+    ConsumerInterface& _consumer;
+};
+
+class ConsumerSync
+{
+  public:
+    using lock_t = std::unique_lock<std::mutex>;
+
+    void wait(ConsumerInterface& consumer)
+    {
+        lock_t lock{_mut};
+        while (_section_idx != consumer.section_idx() || _chunk_idx != consumer.chunk_idx())
+            _cond.wait(lock);
+        lock.release();
+    }
+
+    void notify(ConsumerInterface& consumer)
+    {
+        if (not consumer.is_last_chunk()) {
+            _chunk_idx++;
+        } else {
+            _chunk_idx = 0;
+            _section_idx++;
+        }
+        _cond.notify_all();
+        _mut.unlock();
+    }
+
+  private:
+    std::mutex              _mut  = {};
+    std::condition_variable _cond = {};
+
+    unsigned _section_idx = 0;
+    unsigned _chunk_idx   = 0;
+};
+
+template<typename Consumer> class ConsumerWrapper : public ConsumerInterface
+{
+  public:
+    ConsumerWrapper(Consumer& consumer, ConsumerSync* sync = nullptr)
+      : _consumer(consumer)
+      , _sync(sync)
+    {}
+
+    ConsumerWrapper(const ConsumerWrapper&) noexcept = default;
+    ConsumerWrapper& operator=(const ConsumerWrapper&) noexcept = default;
+
+  protected:
+    // Flushes the already resolved context in ~32KB step, last indicates if this is the last of the chunk
+    virtual void flush(span<const uint8_t> data, bool last)
+    {
+        if (not last) {
+            if (unlikely(_sync != nullptr && _resolved_idx == 0)) _sync->wait(*this);
+
+            _consumer(data);
+
+            _resolved_idx++;
+        } else {
+            _consumer(data);
+
+            _resolved_idx = 0;
+            if (_sync != nullptr) _sync->notify(*this);
+        }
+    }
+
+    virtual void flush(span<uint16_t>      data16bits,
+                       span<const uint8_t> lkt16bits,
+                       span<uint8_t>       data8bits,
+                       span<const uint8_t> lkt8bits)
+    {
+        if (_sync != nullptr) _sync->wait(*this);
+
+        slice_span(data16bits, 16 << 10, [&](span<uint16_t> slice) {
+            uint8_t* s = reinterpret_cast<uint8_t*>(slice.begin());
+            uint8_t* p = s;
+            for (auto sym : slice)
+                *p++ = lkt16bits[sym];
+            _consumer(span<const uint8_t>(s, p));
+        });
+
+        slice_span(data8bits, 32 << 10, [&](span<uint8_t> slice) {
+            for (auto& sym : slice)
+                sym = lkt8bits[sym];
+            _consumer(span<const uint8_t>(slice));
+        });
+        if (_sync != nullptr) _sync->notify(*this);
+    }
+
+  private:
+    template<typename T, typename F> static void slice_span(span<T> data, size_t n, F f)
+    {
+        T* start = data.begin();
+        T* end   = start + n;
+        for (;; start = end, end += n) {
+            if (end < data.end()) {
+                f(span<T>(start, end));
+            } else {
+                f(span<T>(start, data.end()));
+                return;
+            }
+        }
+    }
+
+    Consumer&     _consumer;
+    ConsumerSync* _sync         = nullptr;
+    unsigned      _resolved_idx = 0;
+};
+
+struct OutputConsumer
+{
+    void operator()(span<const uint8_t> data) const { write(STDOUT_FILENO, data.begin(), data.size()); }
+};
+
+struct LineCounter
+{
+    void operator()(span<const uint8_t> data)
+    {
+        size_t         count = 0;
+        const uint8_t* p     = data.begin();
+        const uint8_t* e     = data.end();
+
+        for (;;) {
+            p = static_cast<const uint8_t*>(memchr(p, static_cast<int>('\n'), e - p));
+            if (p != nullptr) {
+                count += 1;
+                p++;
+            } else {
+                break;
+            }
+        }
+
+        lines.fetch_add(count);
+    }
+
+    ~LineCounter() { fprintf(stdout, "%lu\n", lines.load()); }
+
+    std::atomic<size_t> lines = {0};
 };
 
 /* namespace */
