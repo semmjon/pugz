@@ -57,7 +57,7 @@ This project is licensed under the MIT License.
 
 ## Citation 
 
-* Random access to gzip-compressed FASTQ files, in submission
+* [M. Kerbiriou, R. Chikhi, Parallel decompression of gzip-compressed files and random access to DNA sequences, HiCOMB 2019](paper/paper.pdf)
 
 ## Acknowledgements
 
