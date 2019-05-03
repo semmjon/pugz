@@ -941,6 +941,12 @@ class DeflateThreadBase : public DeflateParser
     void set_context(span<uint8_t> ctx)
     {
         PRINT_DEBUG("%p stoped at %lu\n", (void*)this, _in_stream.position_bits());
+#ifndef NDEBUG
+        for (uint8_t c : ctx) {
+            assert(c >= Window<uint8_t>::min_value && c <= Window<uint8_t>::max_value);
+        }
+#endif
+
         auto lock = std::unique_lock<std::mutex>(_mut);
         _context = ctx;
         _stoped_at = _in_stream.position_bits();
