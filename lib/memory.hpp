@@ -139,7 +139,7 @@ class span
     {}
 
     template<typename R, typename = typename std::enable_if<std::is_convertible<decltype(std::declval<R>().begin()), T*>::value>::type>
-    span(R& r) noexcept
+    span(R&& r) noexcept
       : _begin(r.begin())
       , _end(r.end())
     {
@@ -176,9 +176,14 @@ class span
     iterator begin() const { return _begin; }
     iterator end() const { return _end; }
 
+    bool bounds(const T* p) const { return p >= _begin && p <= _end; }
     bool includes(const T* p) const { return p >= _begin && p < _end; }
     bool includes(const T* b, const T* e) const { return b >= _begin && e <= _end; }
-    bool includes(span<const T> other) const { return other.begin() >= _begin && other.end() <= _end; }
+    template<typename R>
+    auto includes(const R& r) -> decltype(includes(r.begin, r.end)) const
+    {
+        return r.begin() >= _begin && r.end() <= _end;
+    }
 
     reference operator[](size_t i)
     {
@@ -190,12 +195,6 @@ class span
     {
         assert(size + start < this->size());
         return span(_begin + start, _begin + start + size);
-    }
-
-    template<typename U, typename = typename std::enable_if<std::is_convertible<T*, U*>::value>::type>
-    operator span<U>()
-    {
-        return { _begin, _end };
     }
 
     template<typename U, typename = decltype(reinterpret_cast<U*>(std::declval<T*>()))> // SFINAE tests for constness consistency
@@ -387,10 +386,8 @@ alloc_huge(size_t n)
         throw std::bad_alloc();
 
     auto res = ::madvise(ptr, bytes, MADV_HUGEPAGE);
-#ifndef NDEBUG
-    fprintf(stderr, "madvise(%p, 0x%lx, HUGEPAGE)=%d\n", ptr, bytes, res);
-#endif
-
+    static_cast<void>(res);
+    PRINT_DEBUG(stderr, "madvise(%p, 0x%lx, HUGEPAGE)=%d\n", ptr, bytes, res);
     return malloc_span<T>(ptr, bytes / sizeof(T));
 }
 
@@ -419,27 +416,27 @@ using mmap_span = unique_span<T, mmap_deleter<T[]>>;
 
 template<typename T>
 inline mmap_span<T>
-alloc_mirrored(size_t n, const char* shm_name_base = nullptr)
+alloc_mirrored(size_t size, size_t ncopies, const char* shm_name_base = nullptr)
 {
-    const size_t nbytes = sizeof(T) * n;
+    const size_t nbytes = sizeof(T) * size;
 
     // Create a backing file in tmpfs
     unsigned fd = details::tmpshm(shm_name_base);
     sys::check_ret(ftruncate(fd, nbytes), "ftrunctate");
 
     // Allocate the virtual contiguous address space
-    T* ptr = reinterpret_cast<T*>(sys::check_ptr(mmap(nullptr, 2 * nbytes, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0), "mmap (anonymous)"));
+    T* ptr = reinterpret_cast<T*>(sys::check_ptr(mmap(nullptr, ncopies * nbytes, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0), "mmap (anonymous)"));
 
-    // Map the file two times
-    if (mmap(ptr, nbytes, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) != ptr)
-        sys::throw_syserr("mmap (shared 0");
-
-    if (mmap(ptr + n, nbytes, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) != ptr + n)
-        sys::throw_syserr("mmap (shared 0");
+    // Map the file ncopies times
+    for (size_t i = 0; i < ncopies; i++) {
+        T* img_ptr = ptr + i * size;
+        if (mmap(img_ptr, nbytes, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) != img_ptr)
+            sys::throw_syserr("mmap (shared 0");
+    }
 
     sys::check_ret(close(fd), "close");
 
-    return { ptr, 2 * n };
+    return { ptr, ncopies * size };
 }
 
 template<typename Lockable = std::mutex>
