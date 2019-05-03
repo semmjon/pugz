@@ -43,11 +43,13 @@ bash test.sh
 
 This is a prototype for proof of concept, so expect some rough corners.
 
-- Right now, the code is a mix between the old libdeflate code base (C with gotos) and C++ prototyped code. Currently it is mostly organized like a header library. However since the source is quite large, we don't think this is the best distribution for it. The middle-ground would be a PIMPL approach with a virtual ABI and some utility wrappers.
+If pugz chokes on some of your large files that you are willing to share, please fill a issue !
+
+- Right now, the code is a mix between the old libdeflate code base (C with gotos) and prototyped C++. Currently it is mostly organized as a header library. However since the source is quite large, we don't think this is the best distribution for it. The middle-ground would be a PIMPL approach with a virtual ABI and some utility wrappers.
 
 - Proper error handling is non existent (relies on assertions).
 
-- Blocked/multipart gzip is not currently supported. (but will be in the future)
+- Blocked/multipart gzip is not currently supported. (support planned)
 
 - Could generate/use an index file for faster random access.
 
