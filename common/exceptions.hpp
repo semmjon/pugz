@@ -11,7 +11,6 @@
 #include <iostream>
 
 #include "common/common.hpp"
-#include "common/compatibility.hpp"
 
 namespace gatbl {
 namespace sys {
@@ -34,21 +33,21 @@ throw_syserr(const char fmt[]...) // No variadic template, avoiding to generate 
     throw std::system_error(errcode, std::generic_category(), _what);
 }
 
-template<typename T, typename Tbounded = make_unsigned_t<T>, typename... Args>
-forceinline_fun hot_fun Tbounded
-check_ret(T ret, Tbounded min, const char* what, Args&&... args)
+template<typename... Args>
+forceinline_fun hot_fun unsigned
+check_ret(int ret, unsigned min, const char* what, Args&&... args)
 {
-    if (unlikely(ret < T(min))) {
+    if (unlikely(ret < int(min))) {
         throw_syserr(what, std::forward<Args>(args)...);
     }
-    return Tbounded(ret);
+    return unsigned(ret);
 }
 
-template<typename T, typename... Args>
-forceinline_fun hot_fun make_unsigned_t<T>
-check_ret(T ret, const char* what, Args&&... args)
+template<typename... Args>
+forceinline_fun hot_fun unsigned
+check_ret(int ret, const char* what, Args&&... args)
 {
-    return check_ret(ret, make_unsigned_t<T>(0), what, std::forward<Args>(args)...);
+    return check_ret(ret, 0u, what, std::forward<Args>(args)...);
 }
 
 template<typename T, typename... Args>

@@ -34,7 +34,7 @@
 #include <vector>
 #include <thread>
 
-#include "deflate_decompress.cpp"
+#include "deflate_decompress.hpp" //FIXME
 
 template<typename T>
 bool
