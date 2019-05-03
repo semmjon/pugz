@@ -25,436 +25,187 @@
  * OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include "../lib/gzip_decompress.hpp" //FIXME
 
 #include "prog_util.h"
-
 
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#ifdef _WIN32
-#  include <sys/utime.h>
-#else
-#  include <sys/time.h>
-#  include <unistd.h>
-#  include <utime.h>
-#endif
 
-struct options {
-	bool to_stdout;
-	bool force;
-	bool keep;
-	const tchar *suffix;
+#include <sys/time.h>
+#include <unistd.h>
+#include <utime.h>
+
+struct options
+{
+    bool count_lines;
     unsigned nthreads;
-    size_t skip;
-    size_t until;
 };
 
-static const tchar *const optstring = T("1::2::3::4::5::6::7::8::9::cdfhknS:s:t:u:V");
+static const tchar* const optstring = T(":hnlt:V");
 
 static void
-show_usage(FILE *fp)
+show_usage(FILE* fp)
 {
-	fprintf(fp,
-"Usage: %" TS " [-LEVEL] [-cdfhkV] [-S SUF] FILE...\n"
-"Compress or decompress the specified FILEs.\n"
-"\n"
-"Options:\n"
-"  -1        fastest (worst) compression\n"
-"  -6        medium compression (default)\n"
-"  -12       slowest (best) compression\n"
-"  -c        write to standard output\n"
-"  -d        decompress\n"
-"  -f        overwrite existing output files\n"
-"  -h        print this help\n"
-"  -k        don't delete input files\n"
-"  -t n      use n threads\n"
-"  -S SUF    use suffix SUF instead of .gz\n"
-"  -s BYTES  skip BYTES of compressed data, then skip 20 blocks, then decompress the rest\n"
-"  -u BYTES  stop 20 block after position BYTES in compressed data\n"
-"  -V        show version and legal information\n",
-	program_invocation_name);
+    fprintf(fp,
+            "Usage: %" TS " [-l] [-t n] FILE...\n"
+            "Decompress the specified FILEs.\n"
+            "\n"
+            "Options:\n"
+            "  -l        count line instead of content to standard output\n"
+            "  -t n      use n threads\n"
+            "  -h        print this help\n"
+            "  -V        show version and legal information\n",
+            program_invocation_name);
 }
 
 static void
 show_version(void)
 {
-	printf(
-"gzip compression program v" LIBDEFLATE_VERSION_STRING "\n"
-"Copyright 2016 Eric Biggers\n"
-"\n"
-"This program is free software which may be modified and/or redistributed\n"
-"under the terms of the MIT license.  There is NO WARRANTY, to the extent\n"
-"permitted by law.  See the COPYING file for details.\n"
-	);
-}
-
-static const tchar *
-get_suffix(const tchar *path, const tchar *suffix)
-{
-	size_t path_len = tstrlen(path);
-	size_t suffix_len = tstrlen(suffix);
-	const tchar *p;
-
-	if (path_len <= suffix_len)
-		return NULL;
-	p = &path[path_len - suffix_len];
-	if (tstrxcmp(p, suffix) == 0)
-		return p;
-	return NULL;
-}
-
-static tchar *
-append_suffix(const tchar *path, const tchar *suffix)
-{
-	size_t path_len = tstrlen(path);
-	size_t suffix_len = tstrlen(suffix);
-	tchar *suffixed_path = new tchar[path_len + suffix_len + 1];
-
-	if (suffixed_path == NULL)
-		return NULL;
-	tmemcpy(suffixed_path, path, path_len);
-	tmemcpy(&suffixed_path[path_len], suffix, suffix_len + 1);
-	return suffixed_path;
-}
-
-static u32
-load_u32_gzip(const byte *p)
-{
-	return ((u32)p[0] << 0) | ((u32)p[1] << 8) |
-		((u32)p[2] << 16) | ((u32)p[3] << 24);
+    printf("Pugz parallel gzip decompression program\n"
+           "Copyright 2019 Maël Kerbiriou, Rayan Chikhi\n"
+           "\n"
+           "Based on:\n"
+           "gzip compression program v" LIBDEFLATE_VERSION_STRING "\n"
+           "Copyright 2016 Eric Biggers\n"
+           "\n"
+           "This program is free software which may be modified and/or redistributed\n"
+           "under the terms of the MIT license.  There is NO WARRANTY, to the extent\n"
+           "permitted by law.  See the COPYING file for details.\n");
 }
 
 static int
-do_decompress(struct libdeflate_decompressor *decompressor,
-          struct file_stream *in, struct file_stream *out, unsigned nthreads, size_t skip,
-          size_t until)
+stat_file(struct file_stream* in, stat_t* stbuf, bool allow_hard_links)
 {
-	const byte *compressed_data = static_cast<const byte*>(in->mmap_mem);
-	size_t compressed_size = in->mmap_size;
-	byte *uncompressed_data = NULL;
-	size_t uncompressed_size;
-    size_t actual_uncompressed_size = 0; // in case we decompress less 
-	enum libdeflate_result result;
-	int ret;
+    if (tfstat(in->fd, stbuf) != 0) {
+        msg("%" TS ": unable to stat file", in->name);
+        return -1;
+    }
 
-	if (compressed_size < sizeof(u32)) {
-	       msg("%" TS ": not in gzip format", in->name);
-	       ret = -1;
-	       goto out;
-	}
+    if (!S_ISREG(stbuf->st_mode) && !in->is_standard_stream) {
+        msg("%" TS " is %s -- skipping", in->name, S_ISDIR(stbuf->st_mode) ? "a directory" : "not a regular file");
+        return -2;
+    }
 
-	uncompressed_size = load_u32_gzip(&compressed_data[compressed_size - 4]);
+    if (stbuf->st_nlink > 1 && !allow_hard_links) {
+        msg("%" TS " has multiple hard links -- skipping "
+            "(use -f to process anyway)",
+            in->name);
+        return -2;
+    }
 
-//	uncompressed_data = new byte[uncompressed_size];
-//	if (uncompressed_data == NULL) {
-//		msg("%" TS ": file is probably too large to be processed by this "
-//		    "program", in->name);
-//		ret = -1;
-//		goto out;
-//	}
-
-
-	result = libdeflate_gzip_decompress(decompressor,
-					    compressed_data,
-					    compressed_size,
-					    uncompressed_data,
-                        uncompressed_size, &actual_uncompressed_size, nthreads,
-                        skip, until);
-
-	if (result == LIBDEFLATE_INSUFFICIENT_SPACE) {
-		msg("%" TS ": file corrupt or too large to be processed by this "
-		    "program", in->name);
-		ret = -1;
-		goto out;
-	}
-
-	if (result != LIBDEFLATE_SUCCESS) {
-		msg("%" TS ": file corrupt or not in gzip format", in->name);
-		ret = -1;
-		goto out;
-	}
-
-	//ret = full_write(out, uncompressed_data, actual_uncompressed_size);
-out:
-    // delete uncompressed_data;
-	return ret;
+    return 0;
 }
 
 static int
-stat_file(struct file_stream *in, stat_t *stbuf, bool allow_hard_links)
+decompress_file(const tchar* path, const struct options* options)
 {
-	if (tfstat(in->fd, stbuf) != 0) {
-		msg("%" TS ": unable to stat file", in->name);
-		return -1;
-	}
+    struct file_stream in;
+    stat_t stbuf;
+    int ret;
+    const byte* in_p;
 
-	if (!S_ISREG(stbuf->st_mode) && !in->is_standard_stream) {
-		msg("%" TS " is %s -- skipping",
-		    in->name, S_ISDIR(stbuf->st_mode) ? "a directory" :
-							"not a regular file");
-		return -2;
-	}
+    ret = xopen_for_read(path, true, &in);
+    if (ret != 0)
+        goto out_free_paths;
 
-	if (stbuf->st_nlink > 1 && !allow_hard_links) {
-		msg("%" TS " has multiple hard links -- skipping "
-		    "(use -f to process anyway)", in->name);
-		return -2;
-	}
+    ret = stat_file(&in, &stbuf, true);
+    if (ret != 0)
+        goto out_close_in;
 
-	return 0;
-}
+    /* TODO: need a streaming-friendly solution */
+    ret = map_file_contents(&in, stbuf.st_size);
+    if (ret != 0)
+        goto out_close_in;
 
-static void
-restore_mode(struct file_stream *out, const stat_t *stbuf)
-{
-#ifndef _WIN32
-	if (fchmod(out->fd, stbuf->st_mode) != 0)
-		msg_errno("%" TS ": unable to preserve mode", out->name);
-#endif
-}
+    in_p = static_cast<const byte*>(in.mmap_mem);
+    if (options->count_lines) {
+        LineCounter line_counter{};
+        libdeflate_gzip_decompress(in_p, in.mmap_size, options->nthreads, line_counter, nullptr);
+    } else {
+        OutputConsumer output{};
+        ConsumerSync sync{};
+        libdeflate_gzip_decompress(in_p, in.mmap_size, options->nthreads, output, &sync);
+    }
 
-static void
-restore_owner_and_group(struct file_stream *out, const stat_t *stbuf)
-{
-#ifndef _WIN32
-	if (fchown(out->fd, stbuf->st_uid, stbuf->st_gid) != 0) {
-		msg_errno("%" TS ": unable to preserve owner and group",
-			  out->name);
-	}
-#endif
-}
+    ret = 0;
 
-static void
-restore_timestamps(struct file_stream *out, const tchar *newpath,
-		   const stat_t *stbuf)
-{
-	int ret;
-#if defined(HAVE_FUTIMENS) && defined(HAVE_STAT_NANOSECOND_PRECISION)
-	struct timespec times[2] = {
-		stbuf->st_atim, stbuf->st_mtim,
-	};
-	ret = futimens(out->fd, times);
-#elif defined(HAVE_FUTIMES) && defined(HAVE_STAT_NANOSECOND_PRECISION)
-	struct timeval times[2] = {
-		{ stbuf->st_atim.tv_sec, stbuf->st_atim.tv_nsec / 1000, },
-		{ stbuf->st_mtim.tv_sec, stbuf->st_mtim.tv_nsec / 1000, },
-	};
-	ret = futimes(out->fd, times);
-#else
-	struct tutimbuf times = {
-		stbuf->st_atime, stbuf->st_mtime,
-	};
-	ret = tutime(newpath, &times);
-#endif
-	if (ret != 0)
-		msg_errno("%" TS ": unable to preserve timestamps", out->name);
-}
-
-static void
-restore_metadata(struct file_stream *out, const tchar *newpath,
-		 const stat_t *stbuf)
-{
-	restore_mode(out, stbuf);
-	restore_owner_and_group(out, stbuf);
-	restore_timestamps(out, newpath, stbuf);
-}
-
-static int
-decompress_file(struct libdeflate_decompressor *decompressor, const tchar *path,
-		const struct options *options)
-{
-	tchar *oldpath = (tchar *)path;
-	tchar *newpath = NULL;
-	struct file_stream in;
-	struct file_stream out;
-	stat_t stbuf;
-	int ret;
-	int ret2;
-
-	if (path != NULL) {
-		const tchar *suffix = get_suffix(path, options->suffix);
-		if (suffix == NULL) {
-			/*
-			 * Input file is unsuffixed.  If the file doesn't exist,
-			 * then try it suffixed.  Otherwise, if we're not
-			 * writing to stdout, skip the file with warning status.
-			 * Otherwise, go ahead and try to open the file anyway
-			 * (which will very likely fail).
-			 */
-			if (tstat(path, &stbuf) != 0 && errno == ENOENT) {
-				oldpath = append_suffix(path, options->suffix);
-				if (oldpath == NULL)
-					return -1;
-				if (!options->to_stdout)
-					newpath = (tchar *)path;
-			} else if (!options->to_stdout) {
-				msg("\"%" TS "\" does not end with the %" TS " "
-				    "suffix -- skipping",
-				    path, options->suffix);
-				return -2;
-			}
-		} else if (!options->to_stdout) {
-			/*
-			 * Input file is suffixed, and we're not writing to
-			 * stdout.  Strip the suffix to get the path to the
-			 * output file.
-			 */
-			newpath = new tchar[suffix - oldpath + 1];
-			if (newpath == NULL)
-				return -1;
-			tmemcpy(newpath, oldpath, suffix - oldpath);
-			newpath[suffix - oldpath] = '\0';
-		}
-	}
-
-	ret = xopen_for_read(oldpath, options->force || options->to_stdout,
-			     &in);
-	if (ret != 0)
-		goto out_free_paths;
-
-	if (!options->force && isatty(in.fd)) {
-		msg("Refusing to read compressed data from terminal.  "
-		    "Use -f to override.\nFor help, use -h.");
-		ret = -1;
-		goto out_close_in;
-	}
-
-	ret = stat_file(&in, &stbuf, options->force || options->keep ||
-			oldpath == NULL || newpath == NULL);
-	if (ret != 0)
-		goto out_close_in;
-
-	ret = xopen_for_write(newpath, options->force, &out);
-	if (ret != 0)
-		goto out_close_in;
-
-	/* TODO: need a streaming-friendly solution */
-	ret = map_file_contents(&in, stbuf.st_size);
-	if (ret != 0)
-		goto out_close_out;
-
-    ret = do_decompress(decompressor, &in, &out, options->nthreads, options->skip, options->until);
-	if (ret != 0)
-		goto out_close_out;
-
-	if (oldpath != NULL && newpath != NULL)
-		restore_metadata(&out, newpath, &stbuf);
-	ret = 0;
-out_close_out:
-	ret2 = xclose(&out);
-	if (ret == 0)
-		ret = ret2;
-	if (ret != 0 && newpath != NULL)
-		tunlink(newpath);
 out_close_in:
-	xclose(&in);
-	if (ret == 0 && oldpath != NULL && newpath != NULL && !options->keep)
-		tunlink(oldpath);
+    xclose(&in);
 out_free_paths:
-	if (newpath != path)
-		delete[] newpath;
-	if (oldpath != path)
-		delete[] oldpath;
-	return ret;
+    return ret;
 }
 
 int
-tmain(int argc, tchar *argv[])
+tmain(int argc, tchar* argv[])
 {
-	tchar *default_file_list[] = { NULL };
-	struct options options;
-	int opt_char;
-	int i;
-	int ret;
+    tchar* default_file_list[] = { NULL };
+    struct options options;
+    int opt_char;
+    int i;
+    int ret;
 
-	_program_invocation_name = get_filename(argv[0]);
+    _program_invocation_name = get_filename(argv[0]);
 
-	options.to_stdout = false;
-	options.force = false;
-	options.keep = false;
-	options.suffix = T(".gz");
+    options.count_lines = false;
     options.nthreads = 1;
-	options.skip = 0;
-    options.until = SIZE_MAX;
 
-	while ((opt_char = tgetopt(argc, argv, optstring)) != -1) {
-		switch (opt_char) {
-		case 'c':
-			options.to_stdout = true;
-			break;
-		case 'f':
-			options.force = true;
-			break;
-		case 'h':
-			show_usage(stdout);
-			return 0;
-		case 'k':
-			options.keep = true;
-			break;
-		case 'n':
-			/*
-			 * -n means don't save or restore the original filename
-			 *  in the gzip header.  Currently this implementation
-			 *  already behaves this way by default, so accept the
-			 *  option as a no-op.
-			 */
-			break;
-		case 'S':
-			options.suffix = toptarg;
-			if (options.suffix[0] == T('\0')) {
-				msg("invalid suffix");
-				return 1;
-			}
-			break;
-        case 't':
-            options.nthreads = atoi(toptarg);
-            fprintf(stderr,"using %d threads for decompression (experimental)\n",options.nthreads);
-            break;
-		case 's':
-            options.skip = strtoul(toptarg, NULL, 10);
-            fprintf(stderr,"skipping %lu bytes (experimental)\n",options.skip);
-			break;
-		case 'u':
-            options.until = strtoul(toptarg, NULL, 10);
-            fprintf(stderr,"decoding until 20 blocks after compressed position %lu\n",options.until);
-			break;
+    while ((opt_char = tgetopt(argc, argv, optstring)) != -1) {
+        switch (opt_char) {
+            case 'l':
+                options.count_lines = true;
+                break;
 
-		case 'V':
-			show_version();
-			return 0;
-		default:
-			show_usage(stderr);
-			return 1;
-		}
-	}
+            case 'h':
+                show_usage(stdout);
+                return 0;
+            case 'n':
+                /*
+                 * -n means don't save or restore the original filename
+                 *  in the gzip header.  Currently this implementation
+                 *  already behaves this way by default, so accept the
+                 *  option as a no-op.
+                 */
+                break;
 
-	argv += toptind;
-	argc -= toptind;
-
-	if (argc == 0) {
-		argv = default_file_list;
-		argc = ARRAY_LEN(default_file_list);
-	} else {
-		for (i = 0; i < argc; i++)
-			if (argv[i][0] == '-' && argv[i][1] == '\0')
-				argv[i] = NULL;
-	}
-
-	ret = 0;
-    for (i = 0; i < argc; i++) {
-        ret |= -decompress_file(nullptr, argv[i], &options);
+            case 't':
+                options.nthreads = atoi(toptarg);
+                fprintf(stderr, "using %d threads for decompression (experimental)\n", options.nthreads);
+                break;
+            case 'V':
+                show_version();
+                return 0;
+            default:
+                show_usage(stderr);
+                return 1;
+        }
     }
 
+    argv += toptind;
+    argc -= toptind;
 
+    if (argc == 0) {
+        argv = default_file_list;
+        argc = ARRAY_LEN(default_file_list);
+    } else {
+        for (i = 0; i < argc; i++)
+            if (argv[i][0] == '-' && argv[i][1] == '\0')
+                argv[i] = NULL;
+    }
 
-	/*
-	 * If ret=0, there were no warnings or errors.  Exit with status 0.
-	 * If ret=2, there was at least one warning.  Exit with status 2.
-	 * Else, there was at least one error.  Exit with status 1.
-	 */
-	if (ret != 0 && ret != 2)
-		ret = 1;
+    ret = 0;
+    for (i = 0; i < argc; i++) {
+        ret |= -decompress_file(argv[i], &options);
+    }
 
-	return ret;
+    /*
+     * If ret=0, there were no warnings or errors.  Exit with status 0.
+     * If ret=2, there was at least one warning.  Exit with status 2.
+     * Else, there was at least one error.  Exit with status 1.
+     */
+    if (ret != 0 && ret != 2)
+        ret = 1;
+
+    return ret;
 }
