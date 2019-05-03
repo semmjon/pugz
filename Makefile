@@ -46,21 +46,20 @@ else
     override CFLAGS += -O4 -flto -march=native -mtune=native -g
 endif
 
-
 ifndef asserts
     asserts=1
 endif
 
 ifneq ($(asserts),1)
-     LIB_CFLAGS+= -DNDEBUG
+     override CFLAGS+= -DNDEBUG
 endif
 
 ifeq ($(print_debug),1)
-     LIB_CFLAGS+= -DPRINT_DEBUG=1
+     override CFLAGS+= -DPRINT_DEBUG=1
 endif
 
 ifeq ($(print_debug_decoding),1)
-     LIB_CFLAGS+= -DPRINT_DEBUG_DECODING=1
+     override CFLAGS+= -DPRINT_DEBUG_DECODING=1
 endif
 
 # Compiling for Windows with MinGW?
@@ -110,12 +109,12 @@ SHARED_LIB := libdeflate$(SHARED_LIB_SUFFIX)
 
 LIB_CFLAGS += $(CFLAGS) -fvisibility=hidden -D_ANSI_SOURCE
 
-LIB_HEADERS := $(wildcard lib/*.h) $(wildcard lib/*.hpp) lib/deflate_decompress.cpp
+LIB_HEADERS := $(wildcard lib/*.h) $(wildcard lib/*.hpp) lib/deflate_decompress.hpp lib/gzip_decompress.hpp
 
 LIB_SRC :=
 LIB_SRC_CXX :=
 ifndef DISABLE_GZIP
-    LIB_SRC_CXX += lib/gzip_decompress.cpp
+    LIB_SRC_CXX +=
 endif
 
 STATIC_LIB_OBJ := $(LIB_SRC:.c=.o)
@@ -162,18 +161,18 @@ PROG_CFLAGS += $(CFLAGS)		 \
 	       -DHAVE_CONFIG_H
 
 PROG_COMMON_HEADERS := programs/prog_util.h programs/config.h
-PROG_COMMON_SRC     := programs/prog_util.c programs/tgetopt.c
-NONTEST_PROGRAM_SRC := programs/gzip.c
-TEST_PROGRAM_SRC    := programs/benchmark.c programs/test_checksums.c \
-			programs/checksum.c
+PROG_COMMON_SRC     := programs/prog_util.cpp programs/tgetopt.cpp
+NONTEST_PROGRAM_SRC := programs/gunzip.cpp
+TEST_PROGRAM_SRC    := programs/benchmark.cpp programs/test_checksums.cpp \
+			programs/checksum.cpp
 
-NONTEST_PROGRAMS := $(NONTEST_PROGRAM_SRC:programs/%.c=%$(PROG_SUFFIX))
+NONTEST_PROGRAMS := $(NONTEST_PROGRAM_SRC:programs/%.cpp=%$(PROG_SUFFIX))
 DEFAULT_TARGETS  += $(NONTEST_PROGRAMS)
-TEST_PROGRAMS    := $(TEST_PROGRAM_SRC:programs/%.c=%$(PROG_SUFFIX))
+TEST_PROGRAMS    := $(TEST_PROGRAM_SRC:programs/%.cpp=%$(PROG_SUFFIX))
 
-PROG_COMMON_OBJ     := $(PROG_COMMON_SRC:%.c=%.o)
-NONTEST_PROGRAM_OBJ := $(NONTEST_PROGRAM_SRC:%.c=%.o)
-TEST_PROGRAM_OBJ    := $(TEST_PROGRAM_SRC:%.c=%.o)
+PROG_COMMON_OBJ     := $(PROG_COMMON_SRC:%.cpp=%.o)
+NONTEST_PROGRAM_OBJ := $(NONTEST_PROGRAM_SRC:%.cpp=%.o)
+TEST_PROGRAM_OBJ    := $(TEST_PROGRAM_SRC:%.cpp=%.o)
 PROG_OBJ := $(PROG_COMMON_OBJ) $(NONTEST_PROGRAM_OBJ) $(TEST_PROGRAM_OBJ)
 
 # Generate autodetected configuration header
@@ -181,7 +180,7 @@ programs/config.h:programs/detect.sh .prog-cflags
 	$(QUIET_GEN) CC="$(CXX)" CFLAGS="$(PROG_CFLAGS)" $< > $@
 
 # Compile program object files
-$(PROG_OBJ): %.o: %.c $(PROG_COMMON_HEADERS) $(COMMON_HEADERS) .prog-cflags
+$(PROG_OBJ): %.o: %.cpp $(PROG_COMMON_HEADERS) $(COMMON_HEADERS) .prog-cflags
 	$(QUIET_CC) $(CXX) -o $@ -c $(PROG_CFLAGS) $<
 
 # Link the programs.
@@ -195,15 +194,6 @@ $(NONTEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ) $(STATIC_L
 $(TEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ) $(STATIC_LIB)
 	$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+ -lz -lrt
 
-ifdef HARD_LINKS
-# Hard link gunzip to gzip
-gunzip$(PROG_SUFFIX):gzip$(PROG_SUFFIX)
-	$(QUIET_LN) ln -f $< $@
-else
-# No hard links; copy gzip to gunzip
-gunzip$(PROG_SUFFIX):gzip$(PROG_SUFFIX)
-	$(QUIET_CP) cp -f $< $@
-endif
 
 DEFAULT_TARGETS += gunzip$(PROG_SUFFIX)
 
