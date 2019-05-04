@@ -49,7 +49,7 @@ libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, 
     PRINT_DEBUG("Using %u threads\n", nthreads);
 
     std::vector<std::thread> threads;
-    std::vector<DeflateThreadBase*> deflate_threads(nthreads);
+    std::vector<DeflateThread*> deflate_threads(nthreads);
 
     size_t n_ready = 0;
     std::condition_variable ready;
@@ -78,7 +78,7 @@ libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, 
             threads.emplace_back([&]() {
                 ConsumerWrapper<Consumer> consumer_wrapper{ consumer, sync };
                 consumer_wrapper.set_chunk_idx(0, nthreads == 1);
-                DeflateThreadFirstBlock deflate_thread(in_stream, consumer_wrapper);
+                DeflateThread deflate_thread(in_stream, consumer_wrapper);
                 PRINT_DEBUG("chunk 0 is %p\n", (void*)&deflate_thread);
                 {
                     std::unique_lock<std::mutex> lock{ ready_mtx };

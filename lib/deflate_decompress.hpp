@@ -898,10 +898,13 @@ struct BackrefMultiplexer
 };
 
 /// Monomorphic base for passing information accross threads
-class DeflateThreadBase : public DeflateParser
+class DeflateThread : public DeflateParser
 {
   public:
-    using DeflateParser::DeflateParser;
+    DeflateThread(const InputStream& input_stream, ConsumerInterface& consumer)
+      : DeflateParser(input_stream)
+      , _consumer(consumer)
+    {}
 
     // Return the context and the position of the next block in the stream
     std::pair<locked_span<uint8_t>, size_t> get_context()
@@ -923,6 +926,38 @@ class DeflateThreadBase : public DeflateParser
     {
         PRINT_DEBUG("%p set to stop after %lu\n", (void*)this, synced_pos);
         _stop_after.store(synced_pos, std::memory_order_release);
+    }
+
+    void set_initial_context(span<uint8_t> context = {})
+    {
+        wait_for_context_borrow();
+        _window.clear();
+        if (context) {
+            memcpy(_window.current_context().begin(), context.begin(), _window.current_context().size());
+        }
+    }
+
+    void go(size_t position_bits = 0)
+    {
+        wait_for_context_borrow();
+
+        _in_stream.set_position_bits(position_bits);
+
+        _window.clear();
+        auto res = this->decompress_loop(_window, _consumer, []() { return false; });
+
+        if (res > block_result::CAUGHT_UP_DOWNSTREAM) {
+            assert(false); // FIXME: find a way to popagate errors...
+        }
+
+        this->set_context(_window.current_context());
+        _consumer.flush(_window.flushable(), true);
+    }
+
+    ~DeflateThread()
+    {
+        wait_for_context_borrow();
+        PRINT_DEBUG("~DeflateThread()");
     }
 
   protected:
@@ -974,6 +1009,10 @@ class DeflateThreadBase : public DeflateParser
         }
     }
 
+  protected:
+    Window<uint8_t> _window = {};
+    ConsumerInterface& _consumer;
+
   private:
     /* Members for synchronization and communication */
     std::mutex _mut{};
@@ -984,16 +1023,15 @@ class DeflateThreadBase : public DeflateParser
     bool _borrowed_context = false;
 };
 
-class DeflateThreadRandomAccess : public DeflateThreadBase
+class DeflateThreadRandomAccess : public DeflateThread
 {
 
   public:
     static constexpr size_t buffer_virtual_size = 128ull << 20;
 
     DeflateThreadRandomAccess(const InputStream& input_stream, ConsumerInterface& consumer)
-      : DeflateThreadBase(input_stream)
+      : DeflateThread(input_stream, consumer)
       , buffer(alloc_huge<uint8_t>(buffer_virtual_size))
-      , _consumer(consumer)
     {}
 
     DeflateThreadRandomAccess(const DeflateThreadRandomAccess&) = delete;
@@ -1005,7 +1043,7 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
         PRINT_DEBUG("~DeflateThreadRandomAccess\n");
     }
 
-    void set_upstream(DeflateThreadBase* up_stream) { _up_stream = up_stream; }
+    void set_upstream(DeflateThread* up_stream) { _up_stream = up_stream; }
 
     size_t sync(size_t skip,
                 const size_t max_bits_skip = size_t(1) << (3 + 20), // 1MiB
@@ -1077,8 +1115,8 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
                 return false;
 
             wait_for_context_borrow(); // the narrow_window is mutated from this point
-            narrow_window.clear();
-            return multiplexer.compress_backref_symbols(wide_window, narrow_window);
+            _window.clear();
+            return multiplexer.compress_backref_symbols(wide_window, _window);
         });
 
         // Seal the 16bit buffer, and get the remaining for the 8bit part
@@ -1088,11 +1126,11 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
         if (res == block_result::SUCCESS) {
             // Decompress to the 8bit buffer
             SinkBuffer<uint8_t> narrow_sink = narrow_buffer;
-            res = this->decompress_loop(narrow_window, narrow_sink, []() { return false; });
+            res = this->decompress_loop(_window, narrow_sink, []() { return false; });
 
             if (res == block_result::CAUGHT_UP_DOWNSTREAM || res == block_result::LAST_BLOCK) {
                 // Seal the narrow buffer
-                narrow_sink.final_flush(narrow_window);
+                narrow_sink.final_flush(_window);
                 narrow_buffer = { narrow_buffer.begin(), narrow_sink.begin() };
 
                 // Get the context and prepare lookup table
@@ -1104,11 +1142,11 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
                 }
 
                 // Translate the context for the next block
-                for (auto& c : narrow_window.current_context()) {
+                for (auto& c : _window.current_context()) {
                     c = multiplexer.lkt8bits2chr[c];
-                    assert(c >= narrow_window.min_value && c <= narrow_window.max_value);
+                    assert(c >= _window.min_value && c <= _window.max_value);
                 }
-                this->set_context(narrow_window.current_context()); // From now on, the window is borrowed
+                this->set_context(_window.current_context()); // From now on, the window is borrowed
 
                 _consumer.flush(wide_buffer, multiplexer.lkt16bits2chr, narrow_buffer, multiplexer.lkt8bits2chr);
                 // write(STDOUT_FILENO, narrow_window.current_context().begin(), narrow_window.current_context().size());
@@ -1123,7 +1161,7 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
 
         } else if (res == block_result::CAUGHT_UP_DOWNSTREAM || res == block_result::LAST_BLOCK) {
             wait_for_context_borrow(); // the narrow_window is mutated from this point
-            narrow_window.clear();
+            _window.clear();
 
             // Get the context and prepare lookup table
             {
@@ -1135,13 +1173,13 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
 
             // Translate the context for the next block
             auto* p = wide_window.current_context().begin();
-            for (auto& c : narrow_window.current_context()) {
+            for (auto& c : _window.current_context()) {
                 c = multiplexer.lkt16bits2chr[*p++];
-                assert(c >= narrow_window.min_value && c <= narrow_window.max_value);
+                assert(c >= _window.min_value && c <= _window.max_value);
             }
             assert(p == wide_window.current_context().end());
 
-            this->set_context(narrow_window.current_context()); // From now on, the window is borrowed
+            this->set_context(_window.current_context()); // From now on, the window is borrowed
 
             _consumer.flush(wide_buffer, multiplexer.lkt16bits2chr, {}, {});
         } else if (res == block_result::FLUSH_FAIL) {
@@ -1155,60 +1193,8 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
   private:
     malloc_span<uint8_t> buffer;
     Window<uint16_t> wide_window = {};
-    Window<uint8_t> narrow_window = {};
     BackrefMultiplexer<Window<uint8_t>, Window<uint16_t>> multiplexer = {};
-    DeflateThreadBase* _up_stream = nullptr;
-    ConsumerInterface& _consumer;
-};
-
-class DeflateThreadFirstBlock : public DeflateThreadBase
-{
-  public:
-    using DeflateThreadBase::DeflateThreadBase;
-
-    DeflateThreadFirstBlock(const DeflateThreadFirstBlock&) = delete;
-    DeflateThreadBase& operator=(const DeflateThreadFirstBlock&) = delete;
-
-    DeflateThreadFirstBlock(const InputStream& input_stream, ConsumerInterface& consumer)
-      : DeflateThreadBase(input_stream)
-      , _consumer(consumer)
-    {}
-
-    void set_initial_context(span<uint8_t> context = {})
-    {
-        wait_for_context_borrow();
-        _window.clear();
-        if (context) {
-            memcpy(_window.current_context().begin(), context.begin(), _window.current_context().size());
-        }
-    }
-
-    void go(size_t position_bits = 0)
-    {
-        wait_for_context_borrow();
-
-        _in_stream.set_position_bits(position_bits);
-
-        _window.clear();
-        auto res = this->decompress_loop(_window, _consumer, []() { return false; });
-
-        if (res > block_result::CAUGHT_UP_DOWNSTREAM) {
-            assert(false); // FIXME: find a way to popagate errors...
-        }
-
-        this->set_context(_window.current_context());
-        _consumer.flush(_window.flushable(), true);
-    }
-
-    ~DeflateThreadFirstBlock()
-    {
-        wait_for_context_borrow();
-        PRINT_DEBUG("~DeflateThreadFirstBlock");
-    }
-
-  private:
-    Window<uint8_t> _window = {};
-    ConsumerInterface& _consumer;
+    DeflateThread* _up_stream = nullptr;
 };
 
 class ConsumerSync
