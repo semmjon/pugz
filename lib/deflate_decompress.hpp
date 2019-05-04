@@ -133,7 +133,7 @@ class DeflateParser
             /* Decode a litlen symbol.  */
             _in_stream.ensure_bits<DEFLATE_MAX_LITLEN_CODEWORD_LEN>();
             // FIXME: entry should be const
-            u32 entry = cur_d->u.litlen_decode_table[_in_stream.bits(LITLEN_TABLEBITS)];
+            uint32_t entry = cur_d->u.litlen_decode_table[_in_stream.bits(LITLEN_TABLEBITS)];
             if (entry & HUFFDEC_SUBTABLE_POINTER) {
                 /* Litlen subtable required (uncommon case)  */
                 _in_stream.remove_bits(LITLEN_TABLEBITS);
@@ -150,7 +150,7 @@ class DeflateParser
                     assert(window.available() != 0);
                 }
 
-                if (Might::fail_if(!window.push(byte(entry >> HUFFDEC_RESULT_SHIFT)))) {
+                if (Might::fail_if(!window.push(uint8_t(entry >> HUFFDEC_RESULT_SHIFT)))) {
                     return block_result::INVALID_LITERAL;
                 }
 
@@ -164,7 +164,7 @@ class DeflateParser
 
             /* Pop the extra length bits and add them to the length base to
              * produce the full length.  */
-            const u32 length = (entry >> HUFFDEC_LENGTH_BASE_SHIFT) + _in_stream.pop_bits(entry & HUFFDEC_EXTRA_LENGTH_BITS_MASK);
+            const uint32_t length = (entry >> HUFFDEC_LENGTH_BASE_SHIFT) + _in_stream.pop_bits(entry & HUFFDEC_EXTRA_LENGTH_BITS_MASK);
             assert(length <= 258);
 
             /* The match destination must not end after the end of the
@@ -199,7 +199,7 @@ class DeflateParser
 
             /* Pop the extra offset bits and add them to the offset base to
              * produce the full offset.  */
-            const u32 offset = (entry & HUFFDEC_OFFSET_BASE_MASK) + _in_stream.pop_bits(entry >> HUFFDEC_EXTRA_OFFSET_BITS_SHIFT);
+            const uint32_t offset = (entry & HUFFDEC_OFFSET_BASE_MASK) + _in_stream.pop_bits(entry >> HUFFDEC_EXTRA_OFFSET_BITS_SHIFT);
 
             /* Copy the match: 'length' bytes at 'window_next - offset' to
              * 'window_next'.  */
@@ -230,7 +230,9 @@ class DeflateParser
     {
 
         /* The order in which precode lengths are stored.  */
-        static constexpr u8 deflate_precode_lens_permutation[DEFLATE_NUM_PRECODE_SYMS] = { 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 };
+        static constexpr uint8_t deflate_precode_lens_permutation[DEFLATE_NUM_PRECODE_SYMS] = {
+            16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15
+        };
 
         /* Read the codeword length counts.  */
         unsigned num_litlen_syms = _in_stream.pop_bits(5) + 257;
@@ -259,7 +261,7 @@ class DeflateParser
             // static_assert(PRECODE_TABLEBITS == DEFLATE_MAX_PRE_CODEWORD_LEN);
 
             /* Read the next precode symbol.  */
-            const u32 entry = _decompressor.u.l.precode_decode_table[_in_stream.bits(DEFLATE_MAX_PRE_CODEWORD_LEN)];
+            const uint32_t entry = _decompressor.u.l.precode_decode_table[_in_stream.bits(DEFLATE_MAX_PRE_CODEWORD_LEN)];
             _in_stream.remove_bits(entry & HUFFDEC_LENGTH_MASK);
             const unsigned presym = entry >> HUFFDEC_RESULT_SHIFT;
 
@@ -293,7 +295,7 @@ class DeflateParser
                     PRINT_DEBUG_DECODING("fail at (i!=0)\n");
                     return false;
                 }
-                const u8 rep_val = _decompressor.u.l.lens[i - 1];
+                const uint8_t rep_val = _decompressor.u.l.lens[i - 1];
                 const unsigned rep_count = 3 + _in_stream.pop_bits(2);
                 _decompressor.u.l.lens[i + 0] = rep_val;
                 _decompressor.u.l.lens[i + 1] = rep_val;
@@ -348,10 +350,10 @@ class DeflateParser
             return false;
         }
 
-        u16 len = _in_stream.pop_u16();
-        u16 nlen = _in_stream.pop_u16();
+        uint16_t len = _in_stream.pop_u16();
+        uint16_t nlen = _in_stream.pop_u16();
 
-        if (Might::fail_if(len != (u16)~nlen)) {
+        if (Might::fail_if(len != (uint16_t)~nlen)) {
             // PRINT_DEBUG("bad uncompressed block: len encoding check\n");
             return false;
         }

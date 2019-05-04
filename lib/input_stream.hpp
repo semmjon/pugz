@@ -7,12 +7,11 @@
 #include "memory.hpp"
 #include "common_defs.h"
 #include "assert.hpp"
-#include "unaligned.h"
 #include "gzip_constants.h"
 
 /**
  * @brief Model an compressed gzip input stream
- * It can be read by dequeing n<32 bits at a time or as byte aligned u16 words
+ * It can be read by dequeing n<32 bits at a time or as byte aligned uint16_t words
 
  * The state of the "input bitstream" consists of the following variables:
  *
@@ -79,7 +78,9 @@ class InputStream
      */
     inline void fill_bits_wordwise()
     {
-        bitbuf |= get_unaligned_leword(in_next) << bitsleft;
+        bitbuf_t dst;
+        memcpy(&dst, in_next, sizeof(bitbuf_t));
+        bitbuf |= dst << bitsleft;
         in_next += (bitbuf_length - bitsleft) >> 3;
         bitsleft += (bitbuf_length - bitsleft) & ~7;
         assert(bitsleft <= bitbuf_length);
@@ -119,6 +120,23 @@ class InputStream
       , data(in, len)
     {}
 
+    InputStream(const InputStream&) = default;
+
+    /// states asignments for the same stream (for backtracking)
+    InputStream& operator=(const InputStream& from)
+    {
+        assert(data == from.data);
+
+        in_next = from.in_next;
+        bitbuf = from.bitbuf;
+        bitsleft = from.bitsleft;
+        overrun_count = from.overrun_count;
+        return *this;
+    }
+
+    InputStream(InputStream&&) = default;
+    InputStream& operator=(InputStream&&) = default;
+
     bool consume_header()
     {
         align_input();
@@ -126,7 +144,6 @@ class InputStream
             return false;
 
         const byte* p = in_next;
-        byte flg;
 
         /* ID1 */
         if (*p++ != GZIP_ID1)
@@ -137,7 +154,7 @@ class InputStream
         /* CM */
         if (*p++ != GZIP_CM_DEFLATE)
             return false;
-        flg = *p++;
+        auto flg = static_cast<uint8_t>(*p++);
         /* MTIME */
         p += 4;
         /* XFL */
@@ -150,10 +167,11 @@ class InputStream
 
         /* Extra field */
         if (bool(flg & GZIP_FEXTRA)) {
-            u16 xlen = get_unaligned_le16(p);
-            p += 2;
+            uint16_t xlen;
+            memcpy(&xlen, p, sizeof(uint16_t));
+            p += sizeof(uint16_t);
 
-            if (data.end() - p < (u32)xlen + GZIP_FOOTER_SIZE)
+            if (data.end() - p < (uint32_t)xlen + GZIP_FOOTER_SIZE)
                 return false;
 
             p += xlen;
@@ -189,33 +207,16 @@ class InputStream
     ssize_t consume_footer()
     {
         align_input();
-        if (reinterpret_cast<uintptr_t>(in_next) % alignof(u32) == 0 || available() < GZIP_FOOTER_SIZE)
+        if (reinterpret_cast<uintptr_t>(in_next) % alignof(uint32_t) == 0 || available() < GZIP_FOOTER_SIZE)
             return -1;
 
-        static_assert(sizeof(u32[2]) == GZIP_FOOTER_SIZE, "Gzip footer size doesn't match sizeof(u32[2])");
-        u32 footer[2];
+        static_assert(sizeof(uint32_t[2]) == GZIP_FOOTER_SIZE, "Gzip footer size doesn't match sizeof(uint32_t[2])");
+        uint32_t footer[2];
         memcpy(footer, in_next, GZIP_FOOTER_SIZE);
         in_next += GZIP_FOOTER_SIZE;
 
         return footer[1]; // decompressed size modulo 4GB
     }
-
-    InputStream(const InputStream&) = default;
-
-    /// states asignments for the same stream (for backtracking)
-    InputStream& operator=(const InputStream& from)
-    {
-        assert(data == from.data);
-
-        in_next = from.in_next;
-        bitbuf = from.bitbuf;
-        bitsleft = from.bitsleft;
-        overrun_count = from.overrun_count;
-        return *this;
-    }
-
-    InputStream(InputStream&&) = default;
-    InputStream& operator=(InputStream&&) = default;
 
     size_t size() const { return data.size(); }
 
@@ -289,10 +290,10 @@ class InputStream
     /**
      * Return the next 'n' bits from the bitbuffer variable without removing them.
      */
-    u32 bits(bitbuf_size_t n) const
+    uint32_t bits(bitbuf_size_t n) const
     {
         assert(bitsleft >= n);
-        return u32(bitbuf & ((u32(1) << n) - 1));
+        return uint32_t(bitbuf & ((uint32_t(1) << n) - 1));
     }
 
     /**
@@ -308,9 +309,9 @@ class InputStream
     /**
      * Remove and return the next 'n' bits from the bitbuffer variable.
      */
-    inline u32 pop_bits(bitbuf_size_t n)
+    inline uint32_t pop_bits(bitbuf_size_t n)
     {
-        u32 tmp = bits(n);
+        uint32_t tmp = bits(n);
         remove_bits(n);
         return tmp;
     }
@@ -329,7 +330,7 @@ class InputStream
         assert(overrun_count <= (bitsleft >> 3));
         in_next -= (bitsleft >> 3) - overrun_count;
         // was:
-        // in_next -= (bitsleft >> 3) - std::min(overrun_count, bitsleft >> 3);
+        // in_next -= (bitsleft >> 3) - std::std::min(overrun_count, bitsleft >> 3);
         bitbuf = 0;
         bitsleft = 0;
     }
@@ -338,10 +339,11 @@ class InputStream
      * Read a 16-bit value from the input.  This must have been preceded by a call
      * to ALIGN_INPUT(), and the caller must have already checked for overrun.
      */
-    inline u16 pop_u16()
+    inline uint16_t pop_u16()
     {
-        assert(available() >= 2);
-        u16 tmp = get_unaligned_le16(in_next);
+        assert(available() >= sizeof(uint16_t));
+        uint16_t tmp;
+        memcpy(&tmp, in_next, sizeof(uint16_t));
         in_next += 2;
         return tmp;
     }

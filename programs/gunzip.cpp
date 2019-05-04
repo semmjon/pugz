@@ -187,7 +187,7 @@ tmain(int argc, tchar* argv[])
 
     if (argc == 0) {
         argv = default_file_list;
-        argc = ARRAY_LEN(default_file_list);
+        argc = sizeof(default_file_list)/sizeof(default_file_list);
     } else {
         for (i = 0; i < argc; i++)
             if (argv[i][0] == '-' && argv[i][1] == '\0')

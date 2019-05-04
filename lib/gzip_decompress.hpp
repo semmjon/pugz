@@ -28,7 +28,6 @@
  */
 
 #include "gzip_constants.h"
-#include "unaligned.h"
 
 #include "libdeflate.h"
 #include <vector>
@@ -40,68 +39,12 @@ template<typename Consumer>
 static enum libdeflate_result
 libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, Consumer& consumer, ConsumerSync* sync)
 {
-    const byte* in_next = in;
-    const byte* const in_end = in_next + in_nbytes;
-    byte flg;
-
-    if (in_nbytes < GZIP_MIN_OVERHEAD)
-        return LIBDEFLATE_BAD_DATA;
-
-    /* ID1 */
-    if (*in_next++ != GZIP_ID1)
-        return LIBDEFLATE_BAD_DATA;
-    /* ID2 */
-    if (*in_next++ != GZIP_ID2)
-        return LIBDEFLATE_BAD_DATA;
-    /* CM */
-    if (*in_next++ != GZIP_CM_DEFLATE)
-        return LIBDEFLATE_BAD_DATA;
-    flg = *in_next++;
-    /* MTIME */
-    in_next += 4;
-    /* XFL */
-    in_next += 1;
-    /* OS */
-    in_next += 1;
-
-    if (bool(flg & GZIP_FRESERVED))
-        return LIBDEFLATE_BAD_DATA;
-
-    /* Extra field */
-    if (bool(flg & GZIP_FEXTRA)) {
-        u16 xlen = get_unaligned_le16(in_next);
-        in_next += 2;
-
-        if (in_end - in_next < (u32)xlen + GZIP_FOOTER_SIZE)
-            return LIBDEFLATE_BAD_DATA;
-
-        in_next += xlen;
-    }
-
-    /* Original file name (zero terminated) */
-    if (bool(flg & GZIP_FNAME)) {
-        while (*in_next++ != byte(0) && in_next != in_end)
-            ;
-        if (in_end - in_next < GZIP_FOOTER_SIZE)
-            return LIBDEFLATE_BAD_DATA;
-    }
-
-    /* File comment (zero terminated) */
-    if (bool(flg & GZIP_FCOMMENT)) {
-        while (*in_next++ != byte(0) && in_next != in_end)
-            ;
-        if (in_end - in_next < GZIP_FOOTER_SIZE)
-            return LIBDEFLATE_BAD_DATA;
-    }
-
-    /* CRC16 for gzip header */
-    if (bool(flg & GZIP_FHCRC)) {
-        in_next += 2;
-        if (in_end - in_next < GZIP_FOOTER_SIZE)
-            return LIBDEFLATE_BAD_DATA;
-    }
-
-    nthreads = std::min(1 + unsigned(in_nbytes >> 21), nthreads);
+    // FIXME: handle header parsing inside DeflateThread*, allowing multimember gzip files
+    InputStream in_stream2(in, in_nbytes);
+    in_stream2.consume_header();
+    InputStream in_stream(in_stream2.in_next, in_stream2.available());
+    size_t in_size = in_stream2.available();
+    nthreads = std::min(1 + unsigned(in_size >> 21), nthreads);
 
     PRINT_DEBUG("Using %u threads\n", nthreads);
 
@@ -113,17 +56,6 @@ libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, 
     std::mutex ready_mtx;
 
     threads.reserve(nthreads);
-
-    // FIXME: the gzip header code is duplicated inside the InputStream
-    // This section of code test that. The goal is to parse them from DeflateThread to handle multipart gzip file
-    InputStream in_stream2(in, in_end - in);
-    bool headerok = in_stream2.consume_header();
-    assert(headerok);
-    assert(in_stream2.position_bits() == 8 * size_t(in_next - in));
-
-    InputStream in_stream(in_next, in_end - GZIP_FOOTER_SIZE - in_next);
-
-    size_t in_size = in_end - GZIP_FOOTER_SIZE - in_next;
 
     // Sections of file decompressed sequentially
     size_t max_section_size = nthreads * (32ull << 20); // 32MB per thread
@@ -179,7 +111,7 @@ libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, 
                     }
 
                     // Unmmap the part previously decompressed (free RSS, usefull for large files)
-                    const byte* unmap_end = details::round_down<details::huge_page_size>(in_next + resume_bitpos / 8);
+                    const byte* unmap_end = details::round_down<details::huge_page_size>(in_stream.data.begin() + resume_bitpos / 8);
                     sys::check_ret(munmap(const_cast<byte*>(last_unmapped), unmap_end - last_unmapped), "munmap");
                     last_unmapped = unmap_end;
 

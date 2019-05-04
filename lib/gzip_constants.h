@@ -14,12 +14,12 @@
 
 #define GZIP_CM_DEFLATE byte(8)
 
-#define GZIP_FTEXT byte(0x01)
-#define GZIP_FHCRC byte(0x02)
-#define GZIP_FEXTRA byte(0x04)
-#define GZIP_FNAME byte(0x08)
-#define GZIP_FCOMMENT byte(0x10)
-#define GZIP_FRESERVED byte(0xE0)
+#define GZIP_FTEXT uint8_t(0x01)
+#define GZIP_FHCRC uint8_t(0x02)
+#define GZIP_FEXTRA uint8_t(0x04)
+#define GZIP_FNAME uint8_t(0x08)
+#define GZIP_FCOMMENT uint8_t(0x10)
+#define GZIP_FRESERVED uint8_t(0xE0)
 
 #define GZIP_MTIME_UNAVAILABLE 0
 

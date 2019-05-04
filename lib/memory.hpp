@@ -387,7 +387,7 @@ alloc_huge(size_t n)
 
     auto res = ::madvise(ptr, bytes, MADV_HUGEPAGE);
     static_cast<void>(res);
-    PRINT_DEBUG(stderr, "madvise(%p, 0x%lx, HUGEPAGE)=%d\n", ptr, bytes, res);
+    PRINT_DEBUG("madvise(%p, 0x%lx, HUGEPAGE)=%d\n", ptr, bytes, res);
     return malloc_span<T>(ptr, bytes / sizeof(T));
 }
 
