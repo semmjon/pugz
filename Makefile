@@ -45,21 +45,20 @@ else
     override CFLAGS += -O4 -flto -march=native -mtune=native -g
 endif
 
-
 ifndef asserts
     asserts=1
 endif
 
 ifneq ($(asserts),1)
-     LIB_CFLAGS+= -DNDEBUG
+     override CFLAGS+= -DNDEBUG
 endif
 
 ifeq ($(print_debug),1)
-     LIB_CFLAGS+= -DPRINT_DEBUG=1
+     override CFLAGS+= -DPRINT_DEBUG=1
 endif
 
 ifeq ($(print_debug_decoding),1)
-     LIB_CFLAGS+= -DPRINT_DEBUG_DECODING=1
+     override CFLAGS+= -DPRINT_DEBUG_DECODING=1
 endif
 
 # Compiling for Windows with MinGW?
