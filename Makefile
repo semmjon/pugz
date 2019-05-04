@@ -16,16 +16,14 @@
 #### by defining CFLAGS in the environment or on the 'make' command line.
 
 cc-option = $(shell if $(CXX) $(1) -c -x c /dev/null -o /dev/null \
-	      1>&2 2>/dev/null; then echo $(1); fi)
+	      1>&2 2>/dev/null; then echo $(1); else echo $(2); fi)
 
-override CFLAGS += -std=c++14 -I. -Icommon -lpthread                    \
-        $(CFLAGS) -O4 -flto -march=native -mtune=native -g -std=c++14 -I. -Icommon -lpthread	\
-        -Iexternal/type_safe/include                                    \
-        -Iexternal/type_safe/external/debug_assert                      \
-        -Wall -Wundef -Wrestrict -Wnull-dereference -Wuseless-cast      \
-        -Wshadow -Weffc++                                               \
-        $(call cc-option,-Wpedantic)                                    \
-        $(call cc-option,-Wvla)
+override CFLAGS += -std=c++14 -mssse3 -I. -Icommon -lpthread               \
+        -Iexternal/type_safe/include                                       \
+        -Iexternal/type_safe/external/debug_assert                         \
+        -Wall -Wextra -Wpedantic -Wundef -Wnull-dereference -Wuseless-cast \
+        -Wshadow -Weffc++ -Wconversion -Wdisabled-optimization             \
+        -Wparentheses -Wpointer-arith -Wno-ignored-attributes
 
 ##############################################################################
 
@@ -43,7 +41,7 @@ ifeq ($(debug),1)
     asserts=1
     override CFLAGS += -O0 -ggdb
 else
-    override CFLAGS += -O4 -flto -march=native -mtune=native -g
+    override CFLAGS += -O3 $(call cc-option,-flto=jobserver,-flto) -march=native -mtune=native -g
 endif
 
 ifndef asserts
@@ -109,7 +107,7 @@ SHARED_LIB := libdeflate$(SHARED_LIB_SUFFIX)
 
 LIB_CFLAGS += $(CFLAGS) -fvisibility=hidden -D_ANSI_SOURCE
 
-LIB_HEADERS := $(wildcard lib/*.h) $(wildcard lib/*.hpp) lib/deflate_decompress.hpp lib/gzip_decompress.hpp
+LIB_HEADERS := $(wildcard lib/*.h) $(wildcard lib/*.hpp)
 
 LIB_SRC :=
 LIB_SRC_CXX :=
@@ -123,23 +121,23 @@ SHARED_LIB_OBJ := $(LIB_SRC:.c=.shlib.o)
 
 # Compile static library object files
 $(STATIC_LIB_OBJ): %.o: %.c $(LIB_HEADERS) $(COMMON_HEADERS) .lib-cflags
-	$(QUIET_CC) $(CXX) -o $@ -c $(LIB_CFLAGS) $<
+	+$(QUIET_CC) $(CXX) -o $@ -c $(LIB_CFLAGS) $<
 $(STATIC_LIB_OBJ_CXX): %.o: %.cpp $(LIB_HEADERS) $(COMMON_HEADERS) .lib-cflags
-	$(QUIET_CC) $(CXX) -o $@ -c $(LIB_CFLAGS) $<
+	+$(QUIET_CC) $(CXX) -o $@ -c $(LIB_CFLAGS) $<
 
 # Compile shared library object files
 $(SHARED_LIB_OBJ): %.shlib.o: %.c $(LIB_HEADERS) $(COMMON_HEADERS) .lib-cflags
-	$(QUIET_CC) $(CXX) -o $@ -c $(LIB_CFLAGS) $(SHARED_LIB_CFLAGS) -DLIBDEFLATE_DLL $<
+	+$(QUIET_CC) $(CXX) -o $@ -c $(LIB_CFLAGS) $(SHARED_LIB_CFLAGS) -DLIBDEFLATE_DLL $<
 
 # Create static library
 $(STATIC_LIB):$(STATIC_LIB_OBJ) $(STATIC_LIB_OBJ_CXX)
-	$(QUIET_AR) $(AR) cr $@ $+
+	+$(QUIET_AR) $(AR) cr $@ $+
 
 DEFAULT_TARGETS += $(STATIC_LIB)
 
 # Create shared library
 $(SHARED_LIB):$(SHARED_LIB_OBJ)
-	$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(LIB_CFLAGS) -shared $+
+	+$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(LIB_CFLAGS) -shared $+
 
 #DEFAULT_TARGETS += $(SHARED_LIB)
 
@@ -160,7 +158,7 @@ PROG_CFLAGS += $(CFLAGS)		 \
 	       -D_FILE_OFFSET_BITS=64	 \
 	       -DHAVE_CONFIG_H
 
-PROG_COMMON_HEADERS := programs/prog_util.h programs/config.h
+PROG_COMMON_HEADERS := programs/prog_util.h  $(LIB_HEADERS)
 PROG_COMMON_SRC     := programs/prog_util.cpp programs/tgetopt.cpp
 NONTEST_PROGRAM_SRC := programs/gunzip.cpp
 TEST_PROGRAM_SRC    := programs/benchmark.cpp programs/test_checksums.cpp \
@@ -175,13 +173,10 @@ NONTEST_PROGRAM_OBJ := $(NONTEST_PROGRAM_SRC:%.cpp=%.o)
 TEST_PROGRAM_OBJ    := $(TEST_PROGRAM_SRC:%.cpp=%.o)
 PROG_OBJ := $(PROG_COMMON_OBJ) $(NONTEST_PROGRAM_OBJ) $(TEST_PROGRAM_OBJ)
 
-# Generate autodetected configuration header
-programs/config.h:programs/detect.sh .prog-cflags
-	$(QUIET_GEN) CC="$(CXX)" CFLAGS="$(PROG_CFLAGS)" $< > $@
 
 # Compile program object files
 $(PROG_OBJ): %.o: %.cpp $(PROG_COMMON_HEADERS) $(COMMON_HEADERS) .prog-cflags
-	$(QUIET_CC) $(CXX) -o $@ -c $(PROG_CFLAGS) $<
+	+$(QUIET_CC) $(CXX) -o $@ -c $(PROG_CFLAGS) $<
 
 # Link the programs.
 #
@@ -189,10 +184,10 @@ $(PROG_OBJ): %.o: %.cpp $(PROG_COMMON_HEADERS) $(COMMON_HEADERS) .prog-cflags
 # test programs must be linked with zlib for doing comparisons.
 
 $(NONTEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ) $(STATIC_LIB)
-	$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+ -lrt
+	+$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+ -lrt
 
 $(TEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ) $(STATIC_LIB)
-	$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+ -lz -lrt
+	+$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+ -lz -lrt
 
 
 DEFAULT_TARGETS += gunzip$(PROG_SUFFIX)
@@ -222,7 +217,7 @@ clean:
 	rm -f *.a *.dll *.exe *.exp *.so \
 		lib/*.o lib/*.obj lib/*.dllobj \
 		programs/*.o programs/*.obj \
-		$(DEFAULT_TARGETS) $(TEST_PROGRAMS) programs/config.h \
+		$(DEFAULT_TARGETS) $(TEST_PROGRAMS) \
 		libdeflate.lib libdeflatestatic.lib \
 		.lib-cflags .prog-cflags
 

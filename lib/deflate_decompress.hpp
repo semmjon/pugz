@@ -104,15 +104,15 @@ class DeflateParser
         block_result success = _in_stream.pop_bits(1) ? block_result::LAST_BLOCK : block_result::SUCCESS;
 
         /* BTYPE: 2 bits  */
-        libdeflate_decompressor* cur_d;
-        switch (_in_stream.pop_bits(2)) {
+        const libdeflate_decompressor* cur_d;
+        switch (_in_stream.pop_bits<uint8_t>(2)) {
             case DEFLATE_BLOCKTYPE_DYNAMIC_HUFFMAN:
-                if (Might::fail_if(!prepare_dynamic(might_tag))) return block_result::INVALID_DYNAMIC_HT;
+                if (might_tag.fail_if(!prepare_dynamic(might_tag))) return block_result::INVALID_DYNAMIC_HT;
                 cur_d = &_decompressor;
                 break;
 
             case DEFLATE_BLOCKTYPE_UNCOMPRESSED:
-                if (Might::fail_if(!do_uncompressed(window, might_tag)))
+                if (might_tag.fail_if(!do_uncompressed(window, might_tag)))
                     return block_result::INVALID_UNCOMPRESSED_BLOCK;
 
                 return success;
@@ -123,14 +123,14 @@ class DeflateParser
         }
 
         /* Decompressing a Huffman block (either dynamic or static)  */
-        PRINT_DEBUG_DECODING(fprintf(stderr, "trying to decode huffman block\n");)
+        PRINT_DEBUG_DECODING("trying to decode huffman block\n");
 
         /* The main DEFLATE decode loop  */
         for (;;) {
             /* Decode a litlen symbol.  */
             _in_stream.ensure_bits<DEFLATE_MAX_LITLEN_CODEWORD_LEN>();
             // FIXME: entry should be const
-            u32 entry = cur_d->u.litlen_decode_table[_in_stream.bits(LITLEN_TABLEBITS)];
+            uint32_t entry = cur_d->u.litlen_decode_table[_in_stream.bits<uint16_t>(LITLEN_TABLEBITS)];
             if (entry & HUFFDEC_SUBTABLE_POINTER) {
                 /* Litlen subtable required (uncommon case)  */
                 _in_stream.remove_bits(LITLEN_TABLEBITS);
@@ -146,12 +146,10 @@ class DeflateParser
                     assert(window.available() != 0);
                 }
 
-                if (Might::fail_if(!window.push(byte(entry >> HUFFDEC_RESULT_SHIFT)))) {
+                if (might_tag.fail_if(!window.push(uint8_t(entry >> HUFFDEC_RESULT_SHIFT)))) {
                     return block_result::INVALID_LITERAL;
                 }
 
-                // fprintf(stderr,"literal: %c\n",byte(entry >> HUFFDEC_RESULT_SHIFT)); // this is indeed the plaintext
-                // decoded character, good to know
                 continue;
             }
 
@@ -161,7 +159,7 @@ class DeflateParser
 
             /* Pop the extra length bits and add them to the length base to
              * produce the full length.  */
-            const u32 length
+            const uint32_t length
               = (entry >> HUFFDEC_LENGTH_BASE_SHIFT) + _in_stream.pop_bits(entry & HUFFDEC_EXTRA_LENGTH_BITS_MASK);
             assert(length <= 258);
 
@@ -184,7 +182,7 @@ class DeflateParser
             // if we end up here, it means we're at a match
 
             /* Decode the match offset.  */
-            entry = cur_d->offset_decode_table[_in_stream.bits(OFFSET_TABLEBITS)];
+            entry = cur_d->offset_decode_table[_in_stream.bits<uint8_t>(OFFSET_TABLEBITS)];
             if (entry & HUFFDEC_SUBTABLE_POINTER) {
                 /* Offset subtable required (uncommon case)  */
                 _in_stream.remove_bits(OFFSET_TABLEBITS);
@@ -196,12 +194,12 @@ class DeflateParser
 
             /* Pop the extra offset bits and add them to the offset base to
              * produce the full offset.  */
-            const u32 offset
+            const uint32_t offset
               = (entry & HUFFDEC_OFFSET_BASE_MASK) + _in_stream.pop_bits(entry >> HUFFDEC_EXTRA_OFFSET_BITS_SHIFT);
 
             /* Copy the match: 'length' bytes at 'window_next - offset' to
              * 'window_next'.  */
-            if (Might::fail_if(!window.copy_match(length, offset))) { return block_result::INVALID_MATCH; }
+            if (might_tag.fail_if(!window.copy_match(length, offset))) { return block_result::INVALID_MATCH; }
         }
     }
 
@@ -225,25 +223,25 @@ class DeflateParser
     {
 
         /* The order in which precode lengths are stored.  */
-        static constexpr u8 deflate_precode_lens_permutation[DEFLATE_NUM_PRECODE_SYMS]
+        static constexpr uint8_t deflate_precode_lens_permutation[DEFLATE_NUM_PRECODE_SYMS]
           = {16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15};
 
         /* Read the codeword length counts.  */
-        unsigned       num_litlen_syms           = _in_stream.pop_bits(5) + 257;
-        unsigned       num_offset_syms           = _in_stream.pop_bits(5) + 1;
-        const unsigned num_explicit_precode_lens = _in_stream.pop_bits(4) + 4;
+        unsigned       num_litlen_syms           = _in_stream.pop_bits<unsigned>(5) + 257;
+        unsigned       num_offset_syms           = _in_stream.pop_bits<unsigned>(5) + 1;
+        const unsigned num_explicit_precode_lens = _in_stream.pop_bits<unsigned>(4) + 4;
 
         /* Read the precode codeword lengths.  */
         _in_stream.ensure_bits<DEFLATE_NUM_PRECODE_SYMS * 3>();
 
         for (unsigned i = 0; i < num_explicit_precode_lens; i++)
-            _decompressor.u.precode_lens[deflate_precode_lens_permutation[i]] = _in_stream.pop_bits(3);
+            _decompressor.u.precode_lens[deflate_precode_lens_permutation[i]] = _in_stream.pop_bits<len_t>(3);
 
         for (unsigned i = num_explicit_precode_lens; i < DEFLATE_NUM_PRECODE_SYMS; i++)
             _decompressor.u.precode_lens[deflate_precode_lens_permutation[i]] = 0;
 
         /* Build the decode table for the precode.  */
-        if (Might::fail_if(!build_precode_decode_table(&_decompressor, might_tag))) return false;
+        if (might_tag.fail_if(!build_precode_decode_table(&_decompressor, might_tag))) return false;
 
         /* Expand the literal/length and offset codeword lengths.  */
         for (unsigned i = 0; i < num_litlen_syms + num_offset_syms;) {
@@ -254,13 +252,14 @@ class DeflateParser
             // static_assert(PRECODE_TABLEBITS == DEFLATE_MAX_PRE_CODEWORD_LEN);
 
             /* Read the next precode symbol.  */
-            const u32 entry = _decompressor.u.l.precode_decode_table[_in_stream.bits(DEFLATE_MAX_PRE_CODEWORD_LEN)];
+            const uint32_t entry
+              = _decompressor.u.l.precode_decode_table[_in_stream.bits<uint8_t>(DEFLATE_MAX_PRE_CODEWORD_LEN)];
             _in_stream.remove_bits(entry & HUFFDEC_LENGTH_MASK);
             const unsigned presym = entry >> HUFFDEC_RESULT_SHIFT;
 
             if (presym < 16) {
                 /* Explicit codeword length  */
-                _decompressor.u.l.lens[i++] = presym;
+                _decompressor.u.l.lens[i++] = len_t(presym);
                 continue;
             }
 
@@ -284,12 +283,12 @@ class DeflateParser
              */
             if (presym == 16) {
                 /* Repeat the previous length 3 - 6 times  */
-                if (Might::fail_if(!(i != 0))) {
+                if (might_tag.fail_if(!(i != 0))) {
                     PRINT_DEBUG_DECODING("fail at (i!=0)\n");
                     return false;
                 }
-                const u8       rep_val        = _decompressor.u.l.lens[i - 1];
-                const unsigned rep_count      = 3 + _in_stream.pop_bits(2);
+                const uint8_t  rep_val        = _decompressor.u.l.lens[i - 1];
+                const unsigned rep_count      = 3 + _in_stream.pop_bits<unsigned>(2);
                 _decompressor.u.l.lens[i + 0] = rep_val;
                 _decompressor.u.l.lens[i + 1] = rep_val;
                 _decompressor.u.l.lens[i + 2] = rep_val;
@@ -299,7 +298,7 @@ class DeflateParser
                 i += rep_count;
             } else if (presym == 17) {
                 /* Repeat zero 3 - 10 times  */
-                const unsigned rep_count      = 3 + _in_stream.pop_bits(3);
+                const unsigned rep_count      = 3 + _in_stream.pop_bits<unsigned>(3);
                 _decompressor.u.l.lens[i + 0] = 0;
                 _decompressor.u.l.lens[i + 1] = 0;
                 _decompressor.u.l.lens[i + 2] = 0;
@@ -313,7 +312,7 @@ class DeflateParser
                 i += rep_count;
             } else {
                 /* Repeat zero 11 - 138 times  */
-                const unsigned rep_count = 11 + _in_stream.pop_bits(7);
+                const unsigned rep_count = 11 + _in_stream.pop_bits<unsigned>(7);
                 memset(&_decompressor.u.l.lens[i], 0, rep_count * sizeof(_decompressor.u.l.lens[i]));
                 i += rep_count;
             }
@@ -324,7 +323,7 @@ class DeflateParser
               "fail at build_offset_decode_table(_decompressor, num_litlen_syms, num_offset_syms)\n");
             return false;
         }
-        if (!build_litlen_decode_table(&_decompressor, num_litlen_syms, num_offset_syms, might_tag)) {
+        if (!build_litlen_decode_table(&_decompressor, num_litlen_syms, might_tag)) {
             PRINT_DEBUG_DECODING(
               "fail at build_litlen_decode_table(_decompressor, num_litlen_syms, num_offset_syms)\n");
             return false;
@@ -334,7 +333,7 @@ class DeflateParser
     }
 
     template<typename OutWindow, typename Might = ShouldSucceed>
-    inline bool do_uncompressed(OutWindow& out, const Might& Might_tag = {})
+    inline bool do_uncompressed(OutWindow& out, const Might& might_tag = {})
     {
         /* Uncompressed block: copy 'len' bytes literally from the input
          * buffer to the output buffer.  */
@@ -345,23 +344,23 @@ class DeflateParser
             return false;
         }
 
-        u16 len  = _in_stream.pop_u16();
-        u16 nlen = _in_stream.pop_u16();
+        uint16_t len  = _in_stream.pop_u16();
+        uint16_t nlen = _in_stream.pop_u16();
 
-        if (Might::fail_if(len != (u16)~nlen)) {
+        if (might_tag.fail_if(len != uint16_t(~nlen))) {
             // PRINT_DEBUG("bad uncompressed block: len encoding check\n");
             return false;
         }
 
-        if (unlikely(len > _in_stream.available())) {
+        if (might_tag.fail_if(len > _in_stream.available())) {
             PRINT_DEBUG_DECODING("bad uncompressed block: len bigger than input stream \n");
             return false;
         }
 
-        if (Might::fail_if(!out.copy(_in_stream, len))) {
+        if (might_tag.fail_if(!out.copy(_in_stream, len))) {
             PRINT_DEBUG_DECODING("bad uncompressed block: rejected by output window (non-ascii)\n");
             return false;
-        };
+        }
         return true;
     }
 
@@ -376,11 +375,11 @@ class DeflateParser
         return sd;
     }
 
-    static libdeflate_decompressor static_decompressor;
-    struct libdeflate_decompressor _decompressor = {};
+    static const libdeflate_decompressor static_decompressor;
+    struct libdeflate_decompressor       _decompressor = {};
 };
 
-libdeflate_decompressor DeflateParser::static_decompressor = DeflateParser::make_static_decompressor();
+const libdeflate_decompressor DeflateParser::static_decompressor = DeflateParser::make_static_decompressor();
 
 namespace details {
 
@@ -398,11 +397,11 @@ template<> struct Integer_helper<uint16_t>
 
 template<> struct Integer_helper<__m128i>
 {
-    static __m128i broadcast(uint8_t c) { return _mm_set1_epi8(c); }
+    static __m128i broadcast(uint8_t c) { return _mm_set1_epi8(int8_t(c)); }
 
-    static __m128i broadcast(uint16_t c) { return _mm_set1_epi16(c); }
+    static __m128i broadcast(uint16_t c) { return _mm_set1_epi16(int16_t(c)); }
 
-    static __m128i broadcast(uint32_t c) { return _mm_set1_epi32(c); }
+    static __m128i broadcast(uint32_t c) { return _mm_set1_epi32(int32_t(c)); }
 };
 
 template<std::size_t N, typename FunctionType, std::size_t I> class repeat_t
@@ -411,7 +410,7 @@ template<std::size_t N, typename FunctionType, std::size_t I> class repeat_t
     repeat_t(FunctionType function)
       : function_(function)
     {}
-    forceinline void operator()()
+    forceinline_fun void operator()()
     {
         function_(I);
         repeat_t<N, FunctionType, I + 1>{function_}();
@@ -426,11 +425,11 @@ template<std::size_t N, typename FunctionType> class repeat_t<N, FunctionType, N
 {
   public:
     repeat_t(FunctionType) {}
-    forceinline void operator()() {}
+    forceinline_fun void operator()() {}
 };
 
 template<std::size_t N, typename FunctionType>
-forceinline void
+forceinline_fun void
 repeat(FunctionType function)
 {
     repeat_t<N, FunctionType, 0>{function}();
@@ -487,7 +486,7 @@ template<typename _char_t = char, unsigned _context_bits = 15> class Window
     wsize_t available() const
     {
         assert(next <= waterline);
-        return waterline - next;
+        return wsize_t(waterline - next);
     }
 
     bool push(char_t c)
@@ -656,7 +655,7 @@ struct DummyWindow
     /// Move the 32K context to the start of the buffer
     size_t flush(DummyWindow&) { return context_size; }
 
-    bool notify_end_block(InputStream& in_stream) const { return true; }
+    bool notify_end_block(InputStream&) const { return true; }
 
   protected:
     size_t _size = 0;
@@ -680,7 +679,7 @@ template<typename char_t> class SinkBuffer : public span<char_t>
     {
         const char_t*       src     = data.begin();
         const char_t* const src_end = ::details::round_down<cache_line_size>(data.end());
-        const size_t        sz      = (src_end - src);
+        const size_t        sz      = size_t(src_end - src);
         assert(src_end > src);
 
         if (unlikely(sz > this->size())) return 0;
@@ -762,7 +761,7 @@ class ConsumerInterface
                        span<const uint8_t> lkt8bits)
       = 0;
 
-    virtual ~ConsumerInterface(){};
+    virtual ~ConsumerInterface() {}
 
   private:
     unsigned _chunk_idx   = 0;
@@ -813,9 +812,9 @@ template<typename NarrowWindow = Window<uint8_t>, typename WideWindow = Window<u
         for (wide_t c_from : input_context.current_context()) {
             narrow_t c_to;
             if (c_from < first_backref_symbol) {
-                c_to = narrow_t(c_from);        // An in range (resolved) character
-            } else {                            // Or a backref indexing the initial (unknown) context
-                c_from -= first_backref_symbol; // Get the back-ref offset
+                c_to = narrow_t(c_from);                        // An in range (resolved) character
+            } else {                                            // Or a backref indexing the initial (unknown) context
+                c_from = wide_t(c_from - first_backref_symbol); // Get the back-ref offset
                 // Linear scan looking for an already allocated backref symbol
                 c_to = narrow_t(0);
                 for (unsigned i = first_backref_symbol; i < next_symbol; i++) {
@@ -1009,7 +1008,7 @@ class DeflateThreadRandomAccess : public DeflateThreadBase
         for (_in_stream.ensure_bits<1>(); pos < max_pos; pos++) {
             assert(pos == _in_stream.position_bits());
 
-            if (_in_stream.bits(1)) { // We don't except to find a final block
+            if (_in_stream.bits<uint8_t>(1)) { // We don't except to find a final block
                 _in_stream.remove_bits(1);
                 _in_stream.ensure_bits<1>();
                 continue;
@@ -1314,7 +1313,7 @@ struct LineCounter
         const uint8_t* e     = data.end();
 
         for (;;) {
-            p = static_cast<const uint8_t*>(memchr(p, static_cast<int>('\n'), e - p));
+            p = static_cast<const uint8_t*>(memchr(p, static_cast<int>('\n'), size_t(e - p)));
             if (p != nullptr) {
                 count += 1;
                 p++;

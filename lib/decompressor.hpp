@@ -41,7 +41,7 @@
 /*
  * Type for codeword lengths.
  */
-typedef u8 len_t;
+typedef uint8_t len_t;
 
 /*
  * The main DEFLATE decompressor structure.  Since this implementation only
@@ -69,15 +69,15 @@ struct libdeflate_decompressor
         {
             len_t lens[DEFLATE_NUM_LITLEN_SYMS + DEFLATE_NUM_OFFSET_SYMS + DEFLATE_MAX_LENS_OVERRUN];
 
-            u32 precode_decode_table[PRECODE_ENOUGH];
+            uint32_t precode_decode_table[PRECODE_ENOUGH];
         } l;
 
-        u32 litlen_decode_table[LITLEN_ENOUGH];
+        uint32_t litlen_decode_table[LITLEN_ENOUGH];
     } u;
 
-    u32 offset_decode_table[OFFSET_ENOUGH];
+    uint32_t offset_decode_table[OFFSET_ENOUGH];
 
-    u16 working_space[2 * (DEFLATE_MAX_CODEWORD_LEN + 1) + DEFLATE_MAX_NUM_SYMS];
+    uint16_t working_space[2 * (DEFLATE_MAX_CODEWORD_LEN + 1) + DEFLATE_MAX_NUM_SYMS];
 };
 
 /*****************************************************************************
@@ -131,38 +131,38 @@ namespace table_builder {
  * This flag is set in all main decode table entries that represent subtable
  * pointers.
  */
-constexpr u32 HUFFDEC_SUBTABLE_POINTER = 0x80000000;
+constexpr uint32_t HUFFDEC_SUBTABLE_POINTER = 0x80000000;
 
 /*
  * This flag is set in all entries in the litlen decode table that represent
  * literals.
  */
-constexpr u32 HUFFDEC_LITERAL = 0x40000000;
+constexpr uint32_t HUFFDEC_LITERAL = 0x40000000;
 
 /* Mask for extracting the codeword length from a decode table entry.  */
-constexpr u32 HUFFDEC_LENGTH_MASK = 0xFF;
+constexpr uint32_t HUFFDEC_LENGTH_MASK = 0xFF;
 
 /* Shift to extract the decode result from a decode table entry.  */
 constexpr size_t HUFFDEC_RESULT_SHIFT = 8;
 
 /* The decode result for each precode symbol.  There is no special optimization
  * for the precode; the decode result is simply the symbol value.  */
-static constexpr u32 precode_decode_results[DEFLATE_NUM_PRECODE_SYMS] = {
+static constexpr uint32_t precode_decode_results[DEFLATE_NUM_PRECODE_SYMS] = {
   0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
 };
 
-constexpr u32
-literal_entry(u32 literal)
+constexpr uint32_t
+literal_entry(uint32_t literal)
 {
     return (HUFFDEC_LITERAL >> HUFFDEC_RESULT_SHIFT) | literal;
 }
 
-constexpr u32    HUFFDEC_EXTRA_LENGTH_BITS_MASK = 0xFF;
-constexpr size_t HUFFDEC_LENGTH_BASE_SHIFT      = 8;
-constexpr u32    HUFFDEC_END_OF_BLOCK_LENGTH    = 0;
+constexpr uint32_t HUFFDEC_EXTRA_LENGTH_BITS_MASK = 0xFF;
+constexpr size_t   HUFFDEC_LENGTH_BASE_SHIFT      = 8;
+constexpr uint32_t HUFFDEC_END_OF_BLOCK_LENGTH    = 0;
 
-constexpr u32
-length_entry(u32 length_base, u32 num_extra_bits)
+constexpr uint32_t
+length_entry(uint32_t length_base, uint32_t num_extra_bits)
 {
     return (length_base << HUFFDEC_LENGTH_BASE_SHIFT) | num_extra_bits;
 }
@@ -171,7 +171,7 @@ length_entry(u32 length_base, u32 num_extra_bits)
 /* The decode result for each litlen symbol.  For literals, this is the literal
  * value itself and the HUFFDEC_LITERAL flag.  For lengths, this is the length
  * base and the number of extra length bits.  */
-static constexpr u32 litlen_decode_results[DEFLATE_NUM_LITLEN_SYMS] = {
+static constexpr uint32_t litlen_decode_results[DEFLATE_NUM_LITLEN_SYMS] = {
 
 	/* Literals  */
 	literal_entry(0)   , literal_entry(1)   , literal_entry(2)   , literal_entry(3)   ,
@@ -258,15 +258,15 @@ static constexpr u32 litlen_decode_results[DEFLATE_NUM_LITLEN_SYMS] = {
 
 
 constexpr size_t HUFFDEC_EXTRA_OFFSET_BITS_SHIFT = 16;
-constexpr u32 HUFFDEC_OFFSET_BASE_MASK = (1 << HUFFDEC_EXTRA_OFFSET_BITS_SHIFT) - 1;
+constexpr uint32_t HUFFDEC_OFFSET_BASE_MASK = (1 << HUFFDEC_EXTRA_OFFSET_BITS_SHIFT) - 1;
 
-constexpr u32 offset_entry(u32 offset_base, u32 num_extra_bits) {
+constexpr uint32_t offset_entry(uint32_t offset_base, uint32_t num_extra_bits) {
     return offset_base | (num_extra_bits << HUFFDEC_EXTRA_OFFSET_BITS_SHIFT);
 }
 
 /* The decode result for each offset symbol.  This is the offset base and the
  * number of extra offset bits.  */
-static constexpr u32 offset_decode_results[DEFLATE_NUM_OFFSET_SYMS] = {
+static constexpr uint32_t offset_decode_results[DEFLATE_NUM_OFFSET_SYMS] = {
     offset_entry(1     , 0)  , offset_entry(2     , 0)  , offset_entry(3     , 0)  , offset_entry(4     , 0)  ,
     offset_entry(5     , 1)  , offset_entry(7     , 1)  , offset_entry(9     , 2)  , offset_entry(13    , 2) ,
     offset_entry(17    , 3)  , offset_entry(25    , 3)  , offset_entry(33    , 4)  , offset_entry(49    , 4)  ,
@@ -279,8 +279,8 @@ static constexpr u32 offset_decode_results[DEFLATE_NUM_OFFSET_SYMS] = {
 // clang-format on
 
 /* Construct a decode table entry from a decode result and codeword length.  */
-static forceinline u32
-                   make_decode_table_entry(u32 result, u32 length)
+static forceinline_fun uint32_t
+                       make_decode_table_entry(uint32_t result, uint32_t length)
 {
     return (result << HUFFDEC_RESULT_SHIFT) | length;
 }
@@ -324,17 +324,17 @@ static forceinline u32
  */
 template<typename might>
 static inline bool
-build_decode_table(u32            decode_table[],
+build_decode_table(uint32_t       decode_table[],
                    const len_t    lens[],
                    const unsigned num_syms,
-                   const u32      decode_results[],
+                   const uint32_t decode_results[],
                    const unsigned table_bits,
                    const unsigned max_codeword_len,
-                   u16            working_space[],
+                   uint16_t       working_space[],
                    const might&   might_tag)
 {
     /* Count how many symbols have each codeword length, including 0.  */
-    u16* const len_counts = &working_space[0];
+    uint16_t* const len_counts = &working_space[0];
     for (unsigned len = 0; len <= max_codeword_len; len++)
         len_counts[len] = 0;
     for (unsigned sym = 0; sym < num_syms; sym++)
@@ -345,13 +345,13 @@ build_decode_table(u32            decode_table[],
 
     /* Initialize 'offsets' so that offsets[len] is the number of codewords
      * shorter than 'len' bits, including length 0.  */
-    u16* const offsets = &working_space[1 * (max_codeword_len + 1)];
-    offsets[0]         = 0;
+    uint16_t* const offsets = &working_space[1 * (max_codeword_len + 1)];
+    offsets[0]              = 0;
     for (unsigned len = 0; len < max_codeword_len; len++)
         offsets[len + 1] = offsets[len] + len_counts[len];
 
     /* Use the 'offsets' array to sort the symbols.  */
-    u16* const sorted_syms = &working_space[2 * (max_codeword_len + 1)];
+    uint16_t* const sorted_syms = &working_space[2 * (max_codeword_len + 1)];
     for (unsigned sym = 0; sym < num_syms; sym++)
         sorted_syms[offsets[lens[sym]]++] = sym;
 
@@ -360,7 +360,7 @@ build_decode_table(u32            decode_table[],
      * codeword of length n should require a proportion of the codespace
      * equaling (1/2)^n.  The code is complete if and only if, by this
      * measure, the codespace is exactly filled by the lengths.  */
-    s32 remainder = 1;
+    int32_t remainder = 1;
     for (unsigned len = 1; len <= max_codeword_len; len++) {
         remainder <<= 1;
         remainder -= len_counts[len];
@@ -379,12 +379,12 @@ build_decode_table(u32            decode_table[],
          * decompressing a well-formed stream, these default values will
          * never be used.  But since a malformed stream might contain
          * any bits at all, these entries need to be set anyway.  */
-        u32 entry = make_decode_table_entry(decode_results[0], 1);
+        uint32_t entry = make_decode_table_entry(decode_results[0], 1);
         for (unsigned sym = 0; sym < (1U << table_bits); sym++)
             decode_table[sym] = entry;
 
         /* A completely empty code is permitted.  */
-        if (might::succeed_if(remainder == s32(1U << max_codeword_len))) return true;
+        if (might::succeed_if(remainder == int32_t(1U << max_codeword_len))) return true;
 
         /* The code is nonempty and incomplete.  Proceed only if there
          * is a single used symbol and its codeword has length 1.  The
@@ -393,7 +393,7 @@ build_decode_table(u32            decode_table[],
          * literal/length and offset codes and assume the codeword is 0
          * rather than 1.  We do the same except we allow this case for
          * precodes too.  */
-        if (might::fail_if(remainder != s32(1U << (max_codeword_len - 1)) || len_counts[1] != 1)) return false;
+        if (might::fail_if(remainder != int32_t(1U << (max_codeword_len - 1)) || len_counts[1] != 1)) return false;
     }
 
     /* Generate the decode table entries.  Since we process codewords from
@@ -441,7 +441,7 @@ build_decode_table(u32            decode_table[],
              * incomplete code is a single codeword of length 1,
              * and that never requires any subtables.  */
             cur_table_bits = codeword_len - table_bits;
-            remainder      = (s32)1 << cur_table_bits;
+            remainder      = (int32_t)1 << cur_table_bits;
             for (;;) {
                 remainder -= len_counts[table_bits + cur_table_bits];
                 if (remainder <= 0) break;
@@ -465,7 +465,7 @@ build_decode_table(u32            decode_table[],
         /* Create the decode table entry, which packs the decode result
          * and the codeword length (minus 'table_bits' for subtables)
          * together.  */
-        u32 entry = make_decode_table_entry(decode_results[sym], codeword_len - num_dropped_bits);
+        uint32_t entry = make_decode_table_entry(decode_results[sym], codeword_len - num_dropped_bits);
 
         /* Fill in as many copies of the decode table entry as are
          * needed.  The number of entries to fill is a power of 2 and
@@ -505,7 +505,7 @@ static inline bool
 build_precode_decode_table(struct libdeflate_decompressor* d, const might& might_tag)
 {
     /* When you change TABLEBITS, you must change ENOUGH, and vice versa! */
-    STATIC_ASSERT(PRECODE_TABLEBITS == 7 && PRECODE_ENOUGH == 128);
+    static_assert(PRECODE_TABLEBITS == 7 && PRECODE_ENOUGH == 128, "invalid TABLEBITS");
 
     return table_builder::build_decode_table(d->u.l.precode_decode_table,
                                              d->u.precode_lens,
@@ -526,7 +526,7 @@ build_litlen_decode_table(struct libdeflate_decompressor* d,
                           const might&                    might_tag)
 {
     /* When you change TABLEBITS, you must change ENOUGH, and vice versa! */
-    STATIC_ASSERT(LITLEN_TABLEBITS == 10 && LITLEN_ENOUGH == 1334);
+    static_assert(LITLEN_TABLEBITS == 10 && LITLEN_ENOUGH == 1334, "invalid TABLEBITS");
 
     return build_decode_table(d->u.litlen_decode_table,
                               d->u.l.lens,
@@ -547,7 +547,7 @@ build_offset_decode_table(struct libdeflate_decompressor* d,
                           const might&                    migth_tag)
 {
     /* When you change TABLEBITS, you must change ENOUGH, and vice versa! */
-    STATIC_ASSERT(OFFSET_TABLEBITS == 8 && OFFSET_ENOUGH == 402);
+    static_assert(OFFSET_TABLEBITS == 8 && OFFSET_ENOUGH == 402, "invalid TABLEBITS");
 
     return build_decode_table(d->offset_decode_table,
                               d->u.l.lens + num_litlen_syms,

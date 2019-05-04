@@ -27,11 +27,6 @@
 
 #ifndef PROGRAMS_PROG_UTIL_H
 #define PROGRAMS_PROG_UTIL_H
-
-#ifdef HAVE_CONFIG_H
-#    include "config.h"
-#endif
-
 #include "libdeflate.h"
 
 #include <limits.h>
@@ -119,12 +114,12 @@ extern const tchar* _program_invocation_name;
 extern void _printf(1, 2) msg(const char* fmt, ...);
 extern void _printf(1, 2) msg_errno(const char* fmt, ...);
 
-extern u64
+extern uint64_t
 timer_ticks(void);
-extern u64
-timer_ticks_to_ms(u64 ticks);
-extern u64
-timer_MB_per_s(u64 bytes, u64 ticks);
+extern uint64_t
+timer_ticks_to_ms(uint64_t ticks);
+extern uint64_t
+timer_MB_per_s(uint64_t bytes, uint64_t ticks);
 
 extern const tchar*
 get_filename(const tchar* path);
@@ -144,7 +139,7 @@ xopen_for_read(const tchar* path, bool symlink_ok, struct file_stream* strm);
 extern int
 xopen_for_write(const tchar* path, bool force, struct file_stream* strm);
 extern int
-map_file_contents(struct file_stream* strm, u64 size);
+map_file_contents(struct file_stream* strm, uint64_t size);
 
 extern ssize_t
 xread(struct file_stream* strm, void* buf, size_t count);

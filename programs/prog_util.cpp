@@ -99,7 +99,7 @@ msg_errno(const char* format, ...)
  * Return the number of timer ticks that have elapsed since some unspecified
  * point fixed at the start of program execution
  */
-u64
+uint64_t
 timer_ticks(void)
 {
 #ifdef _WIN32
@@ -109,18 +109,18 @@ timer_ticks(void)
 #elif defined(HAVE_CLOCK_GETTIME)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (1000000000 * (u64)ts.tv_sec) + ts.tv_nsec;
+    return (1000000000 * (uint64_t)ts.tv_sec) + ts.tv_nsec;
 #else
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    return (1000000 * (u64)tv.tv_sec) + tv.tv_usec;
+    return (1000000 * (uint64_t)tv.tv_sec) + tv.tv_usec;
 #endif
 }
 
 /*
  * Return the number of timer ticks per second
  */
-static u64
+static uint64_t
 timer_frequency(void)
 {
 #ifdef _WIN32
@@ -137,8 +137,8 @@ timer_frequency(void)
 /*
  * Convert a number of elapsed timer ticks to milliseconds
  */
-u64
-timer_ticks_to_ms(u64 ticks)
+uint64_t
+timer_ticks_to_ms(uint64_t ticks)
 {
     return ticks * 1000 / timer_frequency();
 }
@@ -146,8 +146,8 @@ timer_ticks_to_ms(u64 ticks)
 /*
  * Convert a byte count and a number of elapsed timer ticks to MB/s
  */
-u64
-timer_MB_per_s(u64 bytes, u64 ticks)
+uint64_t
+timer_MB_per_s(uint64_t bytes, uint64_t ticks)
 {
     return bytes * timer_frequency() / ticks / 1000000;
 }
@@ -295,7 +295,7 @@ read_full_contents(struct file_stream* strm)
     do {
         if (filled == capacity) {
             if (capacity == SIZE_MAX) goto oom;
-            capacity += MIN(SIZE_MAX - capacity, capacity);
+            capacity += std::min(SIZE_MAX - capacity, capacity);
             buf.resize(capacity);
         }
         ret = xread(strm, &buf[filled], capacity - filled);
@@ -319,7 +319,7 @@ oom:
 
 /* Map the contents of a file into memory */
 int
-map_file_contents(struct file_stream* strm, u64 size)
+map_file_contents(struct file_stream* strm, uint64_t size)
 {
     if (size == 0) /* mmap isn't supported on empty files */
         return read_full_contents(strm);
@@ -383,7 +383,7 @@ xread(struct file_stream* strm, void* buf, size_t count)
     size_t orig_count = count;
 
     while (count != 0) {
-        ssize_t res = read(strm->fd, p, MIN(count, INT_MAX));
+        ssize_t res = read(strm->fd, p, std::min(count, size_t(INT_MAX)));
         if (res == 0) break;
         if (res < 0) {
             if (errno == EAGAIN || errno == EINTR) continue;
@@ -403,7 +403,7 @@ full_write(struct file_stream* strm, const void* buf, size_t count)
     const char* p = static_cast<const char*>(buf);
 
     while (count != 0) {
-        ssize_t res = write(strm->fd, p, MIN(count, INT_MAX));
+        ssize_t res = write(strm->fd, p, std::min(count, size_t(INT_MAX)));
         if (res <= 0) {
             msg_errno("Error writing to %" TS, strm->name);
             return -1;
