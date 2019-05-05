@@ -78,11 +78,12 @@ class InputStream
      */
     hot_fun void fill_bits_wordwise()
     {
+        assert(bitsleft <= bitbuf_length);
         bitbuf_t dst;
         memcpy(&dst, in_next, sizeof(bitbuf_t));
         bitbuf |= dst << bitsleft;
-        in_next += (bitbuf_length - bitsleft) >> 3;
-        bitsleft += (bitbuf_length - bitsleft) & ~7;
+        in_next += (bitbuf_length - bitsleft) >> 3u;
+        bitsleft += (bitbuf_length - bitsleft) & ~7u;
         assert(bitsleft <= bitbuf_length);
     }
 
@@ -171,7 +172,7 @@ class InputStream
             memcpy(&xlen, p, sizeof(uint16_t));
             p += sizeof(uint16_t);
 
-            if (data.end() - p < (uint32_t)xlen + GZIP_FOOTER_SIZE)
+            if (data.end() - p < uint32_t(xlen) + GZIP_FOOTER_SIZE)
                 return false;
 
             p += xlen;
@@ -226,7 +227,7 @@ class InputStream
     size_t available() const restrict
     {
         assert(data.includes(in_next) || in_next == data.end());
-        return data.end() - in_next;
+        return size_t(data.end() - in_next);
     }
 
     /// Remaining available bits
@@ -234,7 +235,7 @@ class InputStream
 
     /** Position in the stream in bits
      */
-    size_t position_bits() const { return 8 * (in_next - data.begin()) - bitsleft; }
+    size_t position_bits() const { return 8 * size_t(in_next - data.begin()) - bitsleft; }
 
     bool set_position_bits(size_t bit_pos)
     {
@@ -290,10 +291,11 @@ class InputStream
     /**
      * Return the next 'n' bits from the bitbuffer variable without removing them.
      */
-    uint32_t bits(bitbuf_size_t n) const
+    template<typename T = uint32_t>
+    T bits(bitbuf_size_t n = 8 * sizeof(T)) const
     {
         assert(bitsleft >= n);
-        return uint32_t(bitbuf & ((uint32_t(1) << n) - 1));
+        return T(bitbuf & ((bitbuf_t(1) << n) - 1));
     }
 
     /**
@@ -309,9 +311,11 @@ class InputStream
     /**
      * Remove and return the next 'n' bits from the bitbuffer variable.
      */
-    uint32_t pop_bits(bitbuf_size_t n)
+    template<typename T = uint32_t>
+    T pop_bits(bitbuf_size_t n = 8 * sizeof(T))
     {
-        uint32_t tmp = bits(n);
+        assert(n <= 8 * sizeof(T));
+        T tmp = bits<T>(n);
         remove_bits(n);
         return tmp;
     }

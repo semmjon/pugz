@@ -115,7 +115,7 @@ decompress_file(const tchar* path, const struct options* options)
         goto out_close_in;
 
     /* TODO: need a streaming-friendly solution */
-    ret = map_file_contents(&in, stbuf.st_size);
+    ret = map_file_contents(&in, size_t(stbuf.st_size));
     if (ret != 0)
         goto out_close_in;
 
@@ -140,7 +140,7 @@ out_free_paths:
 int
 tmain(int argc, tchar* argv[])
 {
-    tchar* default_file_list[] = { NULL };
+    tchar* default_file_list[] = { nullptr };
     struct options options;
     int opt_char;
     int i;
@@ -170,7 +170,7 @@ tmain(int argc, tchar* argv[])
                 break;
 
             case 't':
-                options.nthreads = atoi(toptarg);
+                options.nthreads = unsigned(atoi(toptarg));
                 fprintf(stderr, "using %d threads for decompression (experimental)\n", options.nthreads);
                 break;
             case 'V':
@@ -187,11 +187,11 @@ tmain(int argc, tchar* argv[])
 
     if (argc == 0) {
         argv = default_file_list;
-        argc = sizeof(default_file_list)/sizeof(default_file_list);
+        argc = sizeof(default_file_list) / sizeof(default_file_list);
     } else {
         for (i = 0; i < argc; i++)
             if (argv[i][0] == '-' && argv[i][1] == '\0')
-                argv[i] = NULL;
+                argv[i] = nullptr;
     }
 
     ret = 0;

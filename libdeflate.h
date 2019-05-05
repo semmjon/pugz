@@ -29,7 +29,7 @@ enum libdeflate_result
      * or otherwise unsupported.  */
     LIBDEFLATE_BAD_DATA = 1,
 
-    /* A NULL 'actual_out_nbytes_ret' was provided, but the data would have
+    /* A nullptr 'actual_out_nbytes_ret' was provided, but the data would have
      * decompressed to fewer than 'out_nbytes_avail' bytes.  */
     LIBDEFLATE_SHORT_OUTPUT = 2,
 
