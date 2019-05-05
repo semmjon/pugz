@@ -513,8 +513,44 @@ class Window
         return true;
     }
 
+    hot_fun noinline_fun void copy_overlapmatch(char_t* dst, const char_t* src, wsize_t offset)
+    {
+        assert(offset < batch_copymatch_size);
+        if (offset == 1) {
+            copy_match_ty repeats = details::Integer_helper<copy_match_ty>::broadcast(*src);
+            do {
+                memcpy(dst, &repeats, batch_copymatch_size * sizeof(char_t));
+                dst += batch_copymatch_size;
+            } while (unlikely(dst < next));
+        } else if (offset != 2) { // Universal case
+            do {
+                details::repeat<batch_copymatch_size>([&](size_t) { *dst++ = *src++; });
+            } while (unlikely(dst < next));
+        } else {
+            assert(offset == 2);
+            typename details::Integer_helper<char_t>::double_ty two_symbols;
+            memcpy(&two_symbols, src, 2 * sizeof(char_t));
+            copy_match_ty repeats = details::Integer_helper<copy_match_ty>::broadcast(two_symbols);
+            do {
+                memcpy(dst, &repeats, batch_copymatch_size * sizeof(char_t));
+                dst += batch_copymatch_size;
+            } while (unlikely(dst < next));
+        }
+        assert(_buffer.includes(dst));
+    }
+
+    hot_fun noinline_fun void copy_longmatch(char_t* dst, const char_t* src)
+    {
+        do {
+            memcpy(dst, src, batch_copymatch_size * sizeof(char_t));
+            dst += batch_copymatch_size;
+            src += batch_copymatch_size;
+        } while (unlikely(dst < next));
+        assert(_buffer.includes(dst));
+    }
+
     /* return true if it's a reasonable offset, otherwise false */
-    __attribute__((hot, always_inline)) bool copy_match(wsize_t length, wsize_t offset)
+    hot_fun bool copy_match(wsize_t length, wsize_t offset)
     {
         if (unlikely(offset > context_size)) {
             PRINT_DEBUG("fail, copy_match, offset %d\n", (int)offset);
@@ -529,41 +565,21 @@ class Window
         assert(available() >= length);
 
         char_t* dst = next;
-        char_t* const dst_end = next + length;
-        assert(_buffer.includes(dst, dst_end));
-
+        assert(_buffer.includes(dst, dst + details::round_up<batch_copymatch_size>(length)));
         const char_t* src = next - offset;
-        assert(_buffer.includes(src, src + length + batch_copymatch_size));
+        assert(_buffer.includes(src, src + details::round_up<batch_copymatch_size>(length)));
+
+        next += length;
 
         if (offset >= batch_copymatch_size) {
-            do {
-                memcpy(dst, src, batch_copymatch_size * sizeof(char_t));
-                dst += batch_copymatch_size;
-                src += batch_copymatch_size;
-            } while (unlikely(dst < dst_end));
-        } else if (offset == 1) {
-            copy_match_ty repeats = details::Integer_helper<copy_match_ty>::broadcast(*src);
-            do {
-                memcpy(dst, &repeats, batch_copymatch_size * sizeof(char_t));
-                dst += batch_copymatch_size;
-            } while (unlikely(dst < dst_end));
-        } else if (offset != 2) { // Universal case
-            do {
-                details::repeat<batch_copymatch_size>([&](size_t) { *dst++ = *src++; });
-            } while (unlikely(dst < dst_end));
-        } else {
-            assert(offset == 2);
-            typename details::Integer_helper<char_t>::double_ty two_symbols;
-            memcpy(&two_symbols, src, 2 * sizeof(char_t));
-            copy_match_ty repeats = details::Integer_helper<copy_match_ty>::broadcast(two_symbols);
-            do {
-                memcpy(dst, &repeats, batch_copymatch_size * sizeof(char_t));
-                dst += batch_copymatch_size;
-            } while (unlikely(dst < dst_end));
-        }
-        assert(_buffer.includes(dst));
+            memcpy(dst, src, batch_copymatch_size * sizeof(char_t));
+            if (length <= batch_copymatch_size)
+                return true;
+            else
+                copy_longmatch(dst + batch_copymatch_size, src + batch_copymatch_size);
+        } else
+            copy_overlapmatch(dst, src, offset);
 
-        next = dst_end;
         return true;
     }
 
