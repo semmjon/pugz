@@ -66,7 +66,7 @@ class InputStream
     /**
      * Does the bitbuffer variable currently contain at least 'n' bits?
      */
-    inline bool have_bits(size_t n) const { return bitsleft >= n; }
+    bool have_bits(size_t n) const { return bitsleft >= n; }
 
     /**
      * Fill the bitbuffer variable by reading the next word from the input buffer.
@@ -76,7 +76,7 @@ class InputStream
      * most efficient on little-endian architectures that support fast unaligned
      * access, such as x86 and x86_64.
      */
-    inline void fill_bits_wordwise()
+    hot_fun void fill_bits_wordwise()
     {
         bitbuf_t dst;
         memcpy(&dst, in_next, sizeof(bitbuf_t));
@@ -102,7 +102,7 @@ class InputStream
      * should run a checksum against the uncompressed data if they wish to detect
      * corruptions.
      */
-    inline void fill_bits_bytewise()
+    cold_fun noinline_fun void fill_bits_bytewise()
     {
         do {
             if (likely(in_next != data.end()))
@@ -213,7 +213,7 @@ class InputStream
     /** Remaining available bytes
      * @note align_input() should be called first in order to get accurate readings (or use available_bits() / 8)
      */
-    size_t available() const
+    size_t available() const restrict
     {
         assert(data.includes(in_next) || in_next == data.end());
         return data.end() - in_next;
@@ -257,13 +257,13 @@ class InputStream
      * present in the bitbuffer variable.  'n' cannot be too large; see MAX_ENSURE
      * and CAN_ENSURE().
      */
-    template<bitbuf_size_t n> bool ensure_bits()
+    template<bitbuf_size_t n> hot_fun forceinline_fun bool ensure_bits()
     {
         static_assert(n <= bitbuf_max_ensure, "Bit buffer is too small");
         if (have_bits(n)) {
             return true;
         } else {
-            if (available() >= sizeof(bitbuf_t)) {
+            if (likely(available() >= sizeof(bitbuf_t))) {
                 fill_bits_wordwise();
                 return true;
             } else if (available() >= 1) {
@@ -287,7 +287,7 @@ class InputStream
     /**
      * Remove the next 'n' bits from the bitbuffer variable.
      */
-    inline void remove_bits(bitbuf_size_t n)
+    void remove_bits(bitbuf_size_t n)
     {
         assert(bitsleft >= n);
         bitbuf >>= n;
@@ -297,7 +297,7 @@ class InputStream
     /**
      * Remove and return the next 'n' bits from the bitbuffer variable.
      */
-    inline uint32_t pop_bits(bitbuf_size_t n)
+    uint32_t pop_bits(bitbuf_size_t n)
     {
         uint32_t tmp = bits(n);
         remove_bits(n);
@@ -313,7 +313,7 @@ class InputStream
      * in what would be the "current" byte if we were reading one byte at a time can
      * be actually discarded.
      */
-    inline void align_input()
+    void align_input()
     {
         assert(overrun_count <= (bitsleft >> 3));
         in_next -= (bitsleft >> 3) - overrun_count;
@@ -327,7 +327,7 @@ class InputStream
      * Read a 16-bit value from the input.  This must have been preceded by a call
      * to ALIGN_INPUT(), and the caller must have already checked for overrun.
      */
-    inline uint16_t pop_u16()
+    uint16_t pop_u16()
     {
         assert(available() >= sizeof(uint16_t));
         uint16_t tmp;
@@ -340,34 +340,26 @@ class InputStream
      * Copy n bytes to the ouput buffer. The input buffer must be aligned with a
      * call to align_input()
      */
-    template<typename char_t> inline void copy(char_t* restrict out, size_t n)
+    template<typename char_t> void copy(char_t* restrict out, size_t n) restrict
     {
         // This version support characters representation in output stream wider than bytes
-        assert(available() >= n);
-        for (unsigned i = 0; i < n; i++)
-            out[i] = char_t(in_next[i]);
-        in_next += n;
-    }
-
-    template<typename char_t>
-    inline auto copy(char* restrict out, size_t n) -> std::enable_if_t<sizeof(char_t) == 1, void>
-    {
-        assert(available() >= n);
-        memcpy(out, in_next, n);
-        in_next += n;
+        size_t nbytes = n * sizeof(char_t);
+        assert(available() >= n * nbytes);
+        memcpy(out, in_next, nbytes);
+        in_next += nbytes;
     }
 
     /**
      * Checks that the lenght next bytes are ascii
      * (for checked copy()ies of uncompressed blocks)
      */
-    inline bool check_ascii(size_t n)
+    bool check_ascii(size_t n, uint8_t min_value = '\t', uint8_t max_value = '~')
     {
         if (unlikely(n > available())) return false;
 
         for (size_t i = 0; i < n; i++) {
             byte c = in_next[i];
-            if (c > byte('c') || c < byte('\t')) return false;
+            if (c > byte(max_value) || c < byte(min_value)) return false;
         }
         return true;
     }

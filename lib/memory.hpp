@@ -150,46 +150,46 @@ template<typename T> class span
     span& operator=(const span&) noexcept = default;
     span& operator=(span&&) noexcept = default;
 
-    size_t size() const
+    size_t size() const restrict
     {
         assert(_end >= _begin);
         return _end - _begin;
     }
-    bool empty() const { return size() == 0; }
-         operator bool() const { return size() != 0; }
+    bool empty() const restrict { return size() == 0; }
+         operator bool() const restrict { return size() != 0; }
 
-    reference pop_front(size_t n = 1)
+    reference pop_front(size_t n = 1) restrict
     {
         _begin += n;
         assert(_end >= _begin);
         return *_begin;
     }
 
-    reference pop_back(size_t n = 1)
+    reference pop_back(size_t n = 1) restrict
     {
         _end -= n;
         assert(_end >= _begin);
         return *_end;
     }
 
-    iterator begin() const { return _begin; }
-    iterator end() const { return _end; }
+    iterator begin() const restrict { return _begin; }
+    iterator end() const restrict { return _end; }
 
-    bool                      bounds(const T* p) const { return p >= _begin && p <= _end; }
-    bool                      includes(const T* p) const { return p >= _begin && p < _end; }
-    bool                      includes(const T* b, const T* e) const { return b >= _begin && e <= _end; }
-    template<typename R> auto includes(const R& r) -> decltype(includes(r.begin, r.end)) const
+    bool                      bounds(const T* p) const restrict { return p >= _begin && p <= _end; }
+    bool                      includes(const T* p) const restrict { return p >= _begin && p < _end; }
+    bool                      includes(const T* b, const T* e) const restrict { return b >= _begin && e <= _end; }
+    template<typename R> auto includes(const R& r) -> decltype(includes(r.begin, r.end)) const restrict
     {
         return r.begin() >= _begin && r.end() <= _end;
     }
 
-    reference operator[](size_t i)
+    reference operator[](size_t i) const restrict
     {
         assert(_begin + i < _end);
         return _begin[i];
     }
 
-    span<T> sub_range(size_t size, size_t start = 0)
+    span<T> sub_range(size_t size, size_t start = 0) const restrict
     {
         assert(size + start < this->size());
         return span(_begin + start, _begin + start + size);
@@ -197,7 +197,7 @@ template<typename T> class span
 
     template<typename U,
              typename = decltype(reinterpret_cast<U*>(std::declval<T*>()))> // SFINAE tests for constness consistency
-    span<U> reinterpret() const
+    span<U> reinterpret() const restrict
     {
         assert((size() * sizeof(T)) % sizeof(U) == 0);
         assert(reinterpret_cast<uintptr_t>(_begin) % alignof(U) == 0);
