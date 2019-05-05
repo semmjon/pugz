@@ -92,7 +92,7 @@ class DeflateParser
 
   protected:
     template<typename Window, typename Sink, typename Might = ShouldSucceed>
-    __attribute__((noinline)) block_result do_block(Window& window, Sink& sink, const Might& might_tag = {})
+    block_result do_block(Window& window, Sink& sink, const Might& might_tag = {})
     {
 
         /* Starting to read the next block.  */
@@ -188,7 +188,7 @@ class DeflateParser
 
             /* Decode the match offset.  */
             entry = cur_d->offset_decode_table[_in_stream.bits(OFFSET_TABLEBITS)];
-            if (entry & HUFFDEC_SUBTABLE_POINTER) {
+            if (unlikely(entry & HUFFDEC_SUBTABLE_POINTER)) {
                 /* Offset subtable required (uncommon case)  */
                 _in_stream.remove_bits(OFFSET_TABLEBITS);
                 entry = cur_d->offset_decode_table[((entry >> HUFFDEC_RESULT_SHIFT) & 0xFFFF) + _in_stream.bits(entry & HUFFDEC_LENGTH_MASK)];
@@ -567,9 +567,9 @@ class Window
         return true;
     }
 
-    bool copy(InputStream& in, wsize_t length)
+    hot_fun noinline_fun bool copy(InputStream& in, wsize_t length)
     {
-        if (unlikely(!in.check_ascii(length))) {
+        if (unlikely(!in.check_ascii(length, min_value, max_value))) {
             PRINT_DEBUG("fail, unprintable uncompressed block unexpected in fastq\n");
             return false;
         }
@@ -662,7 +662,7 @@ struct DummyWindow
     bool copy(InputStream& in, wsize_t length)
     {
         _size += length;
-        return in.check_ascii(length);
+        return in.check_ascii(length, min_value, max_value);
     }
 
     /// Move the 32K context to the start of the buffer
@@ -991,7 +991,7 @@ class DeflateThread : public DeflateParser
     size_t get_stop_pos() const { return _stop_after.load(std::memory_order_acquire); }
 
     template<typename Window, typename Sink, typename Predicate>
-    block_result decompress_loop(Window& window, Sink& sink, Predicate&& predicate)
+    noinline_fun flatten_fun block_result decompress_loop(Window& window, Sink& sink, Predicate&& predicate)
     {
         for (;;) {
             if (unlikely(predicate()))

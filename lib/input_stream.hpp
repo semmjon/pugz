@@ -76,7 +76,7 @@ class InputStream
      * most efficient on little-endian architectures that support fast unaligned
      * access, such as x86 and x86_64.
      */
-    inline void fill_bits_wordwise()
+    hot_fun void fill_bits_wordwise()
     {
         bitbuf_t dst;
         memcpy(&dst, in_next, sizeof(bitbuf_t));
@@ -102,7 +102,7 @@ class InputStream
      * should run a checksum against the uncompressed data if they wish to detect
      * corruptions.
      */
-    inline void fill_bits_bytewise()
+    cold_fun noinline_fun void fill_bits_bytewise()
     {
         do {
             if (likely(in_next != data.end()))
@@ -269,13 +269,13 @@ class InputStream
      * and CAN_ENSURE().
      */
     template<bitbuf_size_t n>
-    bool ensure_bits()
+    hot_fun forceinline_fun bool ensure_bits()
     {
         static_assert(n <= bitbuf_max_ensure, "Bit buffer is too small");
         if (have_bits(n)) {
             return true;
         } else {
-            if (available() >= sizeof(bitbuf_t)) {
+            if (likely(available() >= sizeof(bitbuf_t))) {
                 fill_bits_wordwise();
                 return true;
             } else if (available() >= 1) {
