@@ -279,7 +279,7 @@ static constexpr uint32_t offset_decode_results[DEFLATE_NUM_OFFSET_SYMS] = {
 // clang-format on
 
 /* Construct a decode table entry from a decode result and codeword length.  */
-static forceinline uint32_t
+static forceinline_fun uint32_t
 make_decode_table_entry(uint32_t result, uint32_t length)
 {
     return (result << HUFFDEC_RESULT_SHIFT) | length;

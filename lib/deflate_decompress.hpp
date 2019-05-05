@@ -154,7 +154,6 @@ class DeflateParser
                     return block_result::INVALID_LITERAL;
                 }
 
-                // fprintf(stderr,"literal: %c\n",byte(entry >> HUFFDEC_RESULT_SHIFT)); // this is indeed the plaintext decoded character, good to know
                 continue;
             }
 
@@ -421,7 +420,7 @@ class repeat_t
     repeat_t(FunctionType function)
       : function_(function)
     {}
-    forceinline void operator()()
+    forceinline_fun void operator()()
     {
         function_(I);
         repeat_t<N, FunctionType, I + 1>{ function_ }();
@@ -437,11 +436,11 @@ class repeat_t<N, FunctionType, N>
 {
   public:
     repeat_t(FunctionType) {}
-    forceinline void operator()() {}
+    forceinline_fun void operator()() {}
 };
 
 template<std::size_t N, typename FunctionType>
-forceinline void
+forceinline_fun void
 repeat(FunctionType function)
 {
     repeat_t<N, FunctionType, 0>{ function }();

@@ -26,40 +26,22 @@
  */
 
 #ifndef COMMON_COMMON_DEFS_H
-#    define COMMON_COMMON_DEFS_H
-
-#    ifdef __GNUC__
-#        include "compiler_gcc.h"
-#    elif defined(_MSC_VER)
-#        include "compiler_msc.h"
-#    else
-#        pragma message("Unrecognized compiler.  Please add a header file for your compiler.  Compilation will proceed, but performance may suffer!")
-#    endif
+#define COMMON_COMMON_DEFS_H
 
 /* ========================================================================== */
 /*                              Type definitions                              */
 /* ========================================================================== */
 
-#    include <cstdlib>
-#    include <cstddef> /* size_t */
+#include <cstdlib>
+#include <cstddef> /* size_t */
 
-#    ifndef __bool_true_false_are_defined
-#        include <stdbool.h> /* bool */
-#    endif
-
-/* Fixed-width integer types */
-#    ifndef PRIu32
-#        include <inttypes.h>
-#    endif
-#    include <cstddef>
-
-#    ifdef __cpp_lib_byte
+#ifdef __cpp_lib_byte
 using byte = std::byte;
-#    else
+#else
 enum class byte : unsigned char
 {
 };
-#    endif
+#endif
 
 /*
  * Word type of the target architecture.  Use 'size_t' instead of 'unsigned
@@ -68,124 +50,30 @@ enum class byte : unsigned char
  */
 typedef size_t machine_word_t;
 
-/* Number of bytes in a word */
-#    define WORDBYTES ((int)sizeof(machine_word_t))
+#if defined(PRINT_DEBUG) && PRINT_DEBUG
+#    undef PRINT_DEBUG
+#    define PRINT_DEBUG(...)                                                                                                                                   \
+        {                                                                                                                                                      \
+            fprintf(stderr, __VA_ARGS__);                                                                                                                      \
+            fflush(stderr);                                                                                                                                    \
+        }
+#else
+#    undef PRINT_DEBUG
+#    define PRINT_DEBUG(...)                                                                                                                                   \
+        {}
+#endif
 
-/* Number of bits in a word */
-#    define WORDBITS (8 * WORDBYTES)
-
-/* ========================================================================== */
-/*                         Optional compiler features                         */
-/* ========================================================================== */
-
-/* LIBEXPORT - export a function from a shared library */
-#    ifndef LIBEXPORT
-#        define LIBEXPORT
-#    endif
-
-/* inline - suggest that a function be inlined */
-#    ifndef inline
-#        define inline
-#    endif
-
-/* forceinline - force a function to be inlined, if possible */
-#    ifndef forceinline
-#        define forceinline inline
-#    endif
-
-/* restrict - annotate a non-aliased pointer */
-#    ifndef restrict
-#        define restrict
-#    endif
-
-/* likely(expr) - hint that an expression is usually true */
-#    ifndef likely
-#        define likely(expr) (expr)
-#    endif
-
-/* unlikely(expr) - hint that an expression is usually false */
-#    ifndef unlikely
-#        define unlikely(expr) (expr)
-#    endif
-
-/* prefetchr(addr) - prefetch into L1 cache for read */
-#    ifndef prefetchr
-#        define prefetchr(addr)
-#    endif
-
-/* prefetchw(addr) - prefetch into L1 cache for write */
-#    ifndef prefetchw
-#        define prefetchw(addr)
-#    endif
-
-/* ========================================================================== */
-/*                          Unaligned memory accesses                         */
-/* ========================================================================== */
-
-/*
- * UNALIGNED_ACCESS_IS_FAST should be defined to 1 if unaligned memory accesses
- * can be performed efficiently on the target platform.
- */
-#    ifndef UNALIGNED_ACCESS_IS_FAST
-#        define UNALIGNED_ACCESS_IS_FAST 0
-#    endif
-
-/*
- * DEFINE_UNALIGNED_TYPE(type) - a macro that, given an integer type 'type',
- * defines load_type_unaligned(addr) and store_type_unaligned(v, addr) functions
- * which load and store variables of type 'type' from/to unaligned memory
- * addresses.  If not defined, a fallback is used.
- */
-#    ifndef DEFINE_UNALIGNED_TYPE
-
-/*
- * Although memcpy() may seem inefficient, it *usually* gets optimized
- * appropriately by modern compilers.  It's portable and may be the best we can
- * do for a fallback...
- */
-#        include <string.h>
-
-#        define DEFINE_UNALIGNED_TYPE(type)                                                                                                                    \
-                                                                                                                                                               \
-            static forceinline type load_##type##_unaligned(const void* p)                                                                                     \
-            {                                                                                                                                                  \
-                type v;                                                                                                                                        \
-                memcpy(&v, p, sizeof(v));                                                                                                                      \
-                return v;                                                                                                                                      \
-            }                                                                                                                                                  \
-                                                                                                                                                               \
-            static forceinline void store_##type##_unaligned(type v, void* p) { memcpy(p, &v, sizeof(v)); }
-
-#    endif /* !DEFINE_UNALIGNED_TYPE */
-
-/* ========================================================================== */
-/*                             Debug macros                                   */
-/* ========================================================================== */
-
-#    if defined(PRINT_DEBUG) && PRINT_DEBUG
-#        undef PRINT_DEBUG
-#        define PRINT_DEBUG(...)                                                                                                                               \
-            {                                                                                                                                                  \
-                fprintf(stderr, __VA_ARGS__);                                                                                                                  \
-                fflush(stderr);                                                                                                                                \
-            }
-#    else
-#        undef PRINT_DEBUG
-#        define PRINT_DEBUG(...)                                                                                                                               \
-            {}
-#    endif
-
-#    if defined(PRINT_DEBUG_DECODING) && PRINT_DEBUG_DECODING
-#        undef PRINT_DEBUG_DECODING
-#        define PRINT_DEBUG_DECODING(x)                                                                                                                        \
-            {                                                                                                                                                  \
-                fprintf(stderr, __VA_ARGS__);                                                                                                                  \
-                fflush(stderr);                                                                                                                                \
-            }
-#    else
-#        undef PRINT_DEBUG_DECODING
-#        define PRINT_DEBUG_DECODING(x)                                                                                                                        \
-            {}
-#    endif
+#if defined(PRINT_DEBUG_DECODING) && PRINT_DEBUG_DECODING
+#    undef PRINT_DEBUG_DECODING
+#    define PRINT_DEBUG_DECODING(x)                                                                                                                            \
+        {                                                                                                                                                      \
+            fprintf(stderr, __VA_ARGS__);                                                                                                                      \
+            fflush(stderr);                                                                                                                                    \
+        }
+#else
+#    undef PRINT_DEBUG_DECODING
+#    define PRINT_DEBUG_DECODING(x)                                                                                                                            \
+        {}
+#endif
 
 #endif

@@ -27,11 +27,6 @@
 
 #ifndef PROGRAMS_PROG_UTIL_H
 #define PROGRAMS_PROG_UTIL_H
-
-#ifdef HAVE_CONFIG_H
-#    include "config.h"
-#endif
-
 #include "libdeflate.h"
 
 #include <limits.h>

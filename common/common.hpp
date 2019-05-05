@@ -7,18 +7,32 @@
 #include <exception>
 
 #define packed_layout __attribute__((__packed__))
-#define noinline_fun __attribute__((noinline))
-#define forceinline_fun inline __attribute__((always_inline))
-#define flatten_fun __attribute__((flatten))
-#define pure_fun __attribute__((const))
-#define hot_fun __attribute__((hot))
-#define cold_fun __attribute__((cold))
 #define weak_sym __attribute__((weak))
 #define restrict __restrict__
-#define likely(expr) __builtin_expect(!!(expr), 1)
-#define unlikely(expr) __builtin_expect(!!(expr), 0)
-#define prefetchr(addr) __builtin_prefetch((addr), 0)
-#define prefetchw(addr) __builtin_prefetch((addr), 1)
+
+#ifndef NOCOMPILER_HINTS
+#    define noinline_fun __attribute__((noinline))
+#    define forceinline_fun inline __attribute__((always_inline))
+#    define flatten_fun __attribute__((flatten))
+#    define pure_fun __attribute__((const))
+#    define hot_fun __attribute__((hot))
+#    define cold_fun __attribute__((cold))
+#    define likely(expr) __builtin_expect(!!(expr), 1)
+#    define unlikely(expr) __builtin_expect(!!(expr), 0)
+#    define prefetchr(addr) __builtin_prefetch((addr), 0)
+#    define prefetchw(addr) __builtin_prefetch((addr), 1)
+#else
+#    define noinline_fun
+#    define forceinline_fun inline
+#    define flatten_fun
+#    define pure_fun
+#    define hot_fun
+#    define cold_fun
+#    define likely(expr) (expr)
+#    define unlikely(expr) (expr)
+#    define prefetchr(addr) (expr)
+#    define prefetchw(addr) (expr)
+#endif
 
 #ifndef __has_feature
 #    define __has_feature(x) (0)
@@ -56,7 +70,7 @@ namespace gatbl {
  * Do not throw exception on purpose (directly terminate)
  */
 noreturn_attr noinline_fun inline void
-              abort_message(const char* msg...)
+abort_message(const char* msg...)
 {
     va_list args;
     va_start(args, msg);

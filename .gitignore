@@ -6,9 +6,11 @@
 *.o
 *.obj
 *.so
+*.data*
+*.gc*
+*.gz
 /.lib-cflags
 /.prog-cflags
-/programs/config.h
 /benchmark
 /checksum
 /gzip
