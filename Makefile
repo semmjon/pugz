@@ -18,7 +18,7 @@
 cc-option = $(shell if $(CXX) $(1) -c -x c /dev/null -o /dev/null \
 	      1>&2 2>/dev/null; then echo $(1); else echo $(2); fi)
 
-override CFLAGS += -std=c++14 -I. -Icommon -lpthread                       \
+override CFLAGS += -std=c++14 -mssse3 -I. -Icommon -lpthread               \
         -Iexternal/type_safe/include                                       \
         -Iexternal/type_safe/external/debug_assert                         \
         -Wall -Wextra -Wpedantic -Wundef -Wnull-dereference -Wuseless-cast \

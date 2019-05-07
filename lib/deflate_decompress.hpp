@@ -48,6 +48,7 @@
 
 #include <climits>
 #include <pmmintrin.h>
+#include <tmmintrin.h>
 
 #include <mutex>
 #include <condition_variable>
@@ -388,62 +389,114 @@ const libdeflate_decompressor DeflateParser::static_decompressor = DeflateParser
 
 namespace details {
 
-template<typename IntegerType>
-struct Integer_helper;
-
-template<>
-struct Integer_helper<uint8_t>
+/// Unrolled loops through template recurssion
+template<std::size_t N, typename F, typename R>
+struct repeat_t
 {
-    using double_ty = uint16_t;
-};
-
-template<>
-struct Integer_helper<uint16_t>
-{
-    using double_ty = uint32_t;
-};
-
-template<>
-struct Integer_helper<__m128i>
-{
-    static __m128i broadcast(uint8_t c) { return _mm_set1_epi8(int8_t(c)); }
-
-    static __m128i broadcast(uint16_t c) { return _mm_set1_epi16(int16_t(c)); }
-
-    static __m128i broadcast(uint32_t c) { return _mm_set1_epi32(int32_t(c)); }
-};
-
-template<std::size_t N, typename FunctionType, std::size_t I>
-class repeat_t
-{
-  public:
-    repeat_t(FunctionType function)
-      : function_(function)
-    {}
-    forceinline_fun void operator()()
+    forceinline_fun static R call(F f)
     {
-        function_(I);
-        repeat_t<N, FunctionType, I + 1>{ function_ }();
+        R res = f();
+        if (!bool(res))
+            return res;
+        else
+            return repeat_t<N - 1, F, R>::call(f);
+    }
+};
+
+template<std::size_t N, typename F>
+struct repeat_t<N, F, void>
+{
+    forceinline_fun static void call(F f)
+    {
+        f();
+        repeat_t<N - 1, F, void>::call(f);
+    }
+};
+
+template<typename F, typename R>
+struct repeat_t<0, F, R>
+{
+    forceinline_fun static R call(F f) { return f(); }
+};
+
+template<typename F>
+struct repeat_t<0, F, void>
+{
+    forceinline_fun static void call(F f) { f(); }
+};
+
+template<std::size_t N, typename FunctionType>
+forceinline_fun auto
+repeat(FunctionType function) -> decltype(function())
+{
+    static_assert(N > 0, "N must be non-zero");
+    return repeat_t<N - 1, FunctionType, decltype(function())>::call(function);
+}
+
+using vec_t = __m128i;
+static constexpr size_t vec_size = sizeof(vec_t);
+
+static inline void*
+stream_memcpy(void* restrict _dst, const void* restrict _src, size_t size)
+{
+    static_assert(cache_line_size % vec_size == 0, "A integer number of stream_ty should fit in cache line");
+
+    assert(reinterpret_cast<uintptr_t>(_dst) % cache_line_size == 0);
+    assert(reinterpret_cast<uintptr_t>(_src) % cache_line_size == 0);
+    assert(size % cache_line_size == 0);
+
+    auto dst = reinterpret_cast<vec_t*>(_dst);
+    auto src = reinterpret_cast<const vec_t*>(_src);
+    auto dst_end = dst + size / vec_size;
+
+    while (repeat<10>([&]() {
+        repeat<cache_line_size / vec_size>([&]() { _mm_stream_si128(dst++, _mm_load_si128(src++)); });
+        return dst < dst_end;
+    }))
+        ;
+
+    return _dst;
+}
+
+static inline void*
+overlap_memcpy(void* _dst, size_t offset, size_t size)
+{
+    static constexpr __v16qi suffle_arr[16] = {
+        { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },     { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 },
+        { 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1 },     { 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0 },
+        { 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3 },     { 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0 },
+        { 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3 },     { 0, 1, 2, 3, 4, 5, 6, 0, 1, 2, 3, 4, 5, 6, 0, 1 },
+        { 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7 },     { 0, 1, 2, 3, 4, 5, 6, 7, 8, 0, 1, 2, 3, 4, 5, 6 },
+        { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5 },     { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 1, 2, 3, 4 },
+        { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 1, 2, 3 },   { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0, 1, 2 },
+        { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 0, 1 }, { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 0 },
+    };
+
+    static constexpr uint8_t delta[18] = { 0, 0, 0, 2, 0, 4, 2, 5, 0, 2, 4, 6, 8, 10, 12, 14, 0, 1 };
+
+    uint8_t* dst = static_cast<uint8_t*>(_dst);
+    const uint8_t* const dst_end = dst + size;
+    const uint8_t* src = dst - offset;
+
+    if (offset < vec_size) {
+        vec_t repeats;
+        memcpy(&repeats, src, vec_size);
+        repeats = _mm_shuffle_epi8(repeats, reinterpret_cast<vec_t>(suffle_arr[offset]));
+        memcpy(dst, &repeats, vec_size);
+
+        src = dst - delta[offset];
+        dst += vec_size;
+        if (dst >= dst_end)
+            return _dst;
     }
 
-  private:
-    FunctionType function_;
-};
+    do {
+        memcpy(dst, src, vec_size);
+        dst += vec_size;
+        src += vec_size;
+    } while (dst < dst_end);
 
-// Unrolled loops through template recurssion
-template<std::size_t N, typename FunctionType>
-class repeat_t<N, FunctionType, N>
-{
-  public:
-    repeat_t(FunctionType) {}
-    forceinline_fun void operator()() {}
-};
-
-template<std::size_t N, typename FunctionType>
-forceinline_fun void
-repeat(FunctionType function)
-{
-    repeat_t<N, FunctionType, 0>{ function }();
+    return _dst;
 }
 
 }
@@ -472,9 +525,8 @@ class Window
     // We add one 4k page for the actual size of the buffer, allowing to copy more than requested
     static constexpr wsize_t buffer_size = context_size + ::details::page_size / sizeof(char_t);
 
-    using copy_match_ty = __m128i;
-    static constexpr wsize_t batch_copymatch_size = sizeof(copy_match_ty) / sizeof(char_t);
-    static_assert(sizeof(copy_match_ty) % sizeof(char_t) == 0, "Fractional number of symbols in copy match batches");
+    static constexpr wsize_t batch_copymatch_size = details::vec_size / sizeof(char_t);
+    static_assert(details::vec_size % sizeof(char_t) == 0, "Fractional number of symbols in copy match batches");
 
     Window(Window&&) noexcept = default;
     Window& operator=(Window&&) noexcept = default;
@@ -513,44 +565,8 @@ class Window
         return true;
     }
 
-    hot_fun noinline_fun void copy_overlapmatch(char_t* dst, const char_t* src, wsize_t offset)
-    {
-        assert(offset < batch_copymatch_size);
-        if (offset == 1) {
-            copy_match_ty repeats = details::Integer_helper<copy_match_ty>::broadcast(*src);
-            do {
-                memcpy(dst, &repeats, batch_copymatch_size * sizeof(char_t));
-                dst += batch_copymatch_size;
-            } while (unlikely(dst < next));
-        } else if (offset != 2) { // Universal case
-            do {
-                details::repeat<batch_copymatch_size>([&](size_t) { *dst++ = *src++; });
-            } while (unlikely(dst < next));
-        } else {
-            assert(offset == 2);
-            typename details::Integer_helper<char_t>::double_ty two_symbols;
-            memcpy(&two_symbols, src, 2 * sizeof(char_t));
-            copy_match_ty repeats = details::Integer_helper<copy_match_ty>::broadcast(two_symbols);
-            do {
-                memcpy(dst, &repeats, batch_copymatch_size * sizeof(char_t));
-                dst += batch_copymatch_size;
-            } while (unlikely(dst < next));
-        }
-        assert(_buffer.includes(dst));
-    }
-
-    hot_fun noinline_fun void copy_longmatch(char_t* dst, const char_t* src)
-    {
-        do {
-            memcpy(dst, src, batch_copymatch_size * sizeof(char_t));
-            dst += batch_copymatch_size;
-            src += batch_copymatch_size;
-        } while (unlikely(dst < next));
-        assert(_buffer.includes(dst));
-    }
-
     /* return true if it's a reasonable offset, otherwise false */
-    hot_fun bool copy_match(wsize_t length, wsize_t offset)
+    bool copy_match(wsize_t length, wsize_t offset)
     {
         if (unlikely(offset > context_size)) {
             PRINT_DEBUG("fail, copy_match, offset %d\n", (int)offset);
@@ -565,25 +581,16 @@ class Window
         assert(available() >= length);
 
         char_t* dst = next;
-        assert(_buffer.includes(dst, dst + details::round_up<batch_copymatch_size>(length)));
-        const char_t* src = next - offset;
-        assert(_buffer.includes(src, src + details::round_up<batch_copymatch_size>(length)));
-
         next += length;
+        assert(_buffer.includes(dst, dst + details::round_up<batch_copymatch_size>(length)));
+        assert(_buffer.includes(dst - offset));
 
-        if (offset >= batch_copymatch_size) {
-            memcpy(dst, src, batch_copymatch_size * sizeof(char_t));
-            if (length <= batch_copymatch_size)
-                return true;
-            else
-                copy_longmatch(dst + batch_copymatch_size, src + batch_copymatch_size);
-        } else
-            copy_overlapmatch(dst, src, offset);
+        details::overlap_memcpy(dst, offset * sizeof(char_t), length * sizeof(char_t));
 
         return true;
     }
 
-    hot_fun noinline_fun bool copy(InputStream& in, wsize_t length)
+    bool copy(InputStream& in, wsize_t length)
     {
         if (unlikely(!in.check_ascii(length, min_value, max_value))) {
             PRINT_DEBUG("fail, unprintable uncompressed block unexpected in fastq\n");
@@ -707,24 +714,14 @@ class SinkBuffer : public span<char_t>
 
     size_t operator()(span<char_t> data)
     {
-        const char_t* src = data.begin();
-        const char_t* const src_end = ::details::round_down<cache_line_size>(data.end());
-        const size_t sz = size_t(src_end - src);
-        assert(src_end > src);
-
+        const size_t sz = size_t(::details::round_down<cache_line_size>(data.end()) - data.begin());
         if (unlikely(sz > this->size()))
             return 0;
 
-        span<char_t> dst = this->sub_range(sz);
+        char_t* dst = this->begin();
         this->pop_front(sz);
 
-        do {
-            copy_cache_line(dst.begin(), src);
-            dst.pop_front(cache_line_size / sizeof(char_t));
-            src += cache_line_size / sizeof(char_t);
-        } while (dst.size() > 0);
-        assert(src == src_end);
-
+        details::stream_memcpy(dst, data.begin(), sz * sizeof(char_t));
         return sz;
     }
 
@@ -744,21 +741,6 @@ class SinkBuffer : public span<char_t>
 
     // Return a pointer after the last written symbol in the buffer
     char_t* buf_ptr() const { return this->begin(); }
-
-  private:
-    static void copy_cache_line(char_t* restrict _dst, const char_t* restrict _src)
-    {
-        using stream_ty = __m128i;
-        static_assert(cache_line_size % sizeof(stream_ty) == 0, "A integer number of stream_ty should fits in cache line");
-
-        assert(reinterpret_cast<uintptr_t>(_dst) % cache_line_size == 0);
-        assert(reinterpret_cast<uintptr_t>(_src) % cache_line_size == 0);
-
-        auto dst = reinterpret_cast<stream_ty*>(_dst);
-        auto src = reinterpret_cast<const stream_ty*>(_src);
-
-        details::repeat<cache_line_size / sizeof(stream_ty)>([&](size_t) { _mm_stream_si128(dst++, _mm_load_si128(src++)); });
-    }
 };
 
 // Virtual base class for pugz consumers
@@ -1007,7 +989,7 @@ class DeflateThread : public DeflateParser
     size_t get_stop_pos() const { return _stop_after.load(std::memory_order_acquire); }
 
     template<typename Window, typename Sink, typename Predicate>
-    noinline_fun flatten_fun block_result decompress_loop(Window& window, Sink& sink, Predicate&& predicate)
+    flatten_fun block_result decompress_loop(Window& window, Sink& sink, Predicate&& predicate)
     {
         for (;;) {
             if (unlikely(predicate()))
