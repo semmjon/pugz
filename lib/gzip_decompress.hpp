@@ -69,8 +69,10 @@ libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, 
     size_t chunk_size = section_size / nthreads;
     // The first thread is working with resolved context so its faster
     size_t first_chunk_size = chunk_size + (4UL << 20); // FIXME: ratio instead of delta
-    if (nthreads > 1)
+    if (nthreads > 1) {
         chunk_size = (nthreads * chunk_size - first_chunk_size) / (nthreads - 1);
+        first_chunk_size = section_size - chunk_size * (nthreads - 1);
+    }
 
     for (unsigned chunk_idx = 0; chunk_idx < nthreads; chunk_idx++) {
         if (chunk_idx == 0) {
@@ -115,9 +117,9 @@ libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, 
                     sys::check_ret(munmap(const_cast<byte*>(last_unmapped), size_t(unmap_end - last_unmapped)), "munmap");
                     last_unmapped = unmap_end;
 
-                    PRINT_DEBUG("%p chunk 0 of section %u: [%lu, %lu[\n", (void*)&deflate_thread, section_idx, resume_bitpos, stop);
+                    PRINT_DEBUG("%p chunk 0 of section %u: [%lu<=%lu, %lu[\n", (void*)&deflate_thread, section_idx, start * 8, resume_bitpos, stop);
 
-                    assert(resume_bitpos > start * 8);
+                    assert(resume_bitpos >= start * 8);
                     assert(resume_bitpos < stop * 8);
                     deflate_thread.set_end_block(stop * 8);
                     consumer_wrapper.set_section_idx(section_idx);
@@ -158,6 +160,7 @@ libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, 
 
                     consumer_wrapper.set_section_idx(section_idx);
                     deflate_thread.go(start * 8);
+                    assert(chunk_idx != nthreads - 1 || stop == section_offset + section_size);
                 }
 
                 if (chunk_idx == nthreads - 1)    // No one will need the context from the last chunk of the last section

@@ -994,8 +994,14 @@ class DeflateThread : public DeflateParser
         for (;;) {
             if (unlikely(predicate()))
                 return block_result::SUCCESS;
-            if (unlikely(_in_stream.position_bits() >= get_stop_pos())) {
-                PRINT_DEBUG("%p stoped at %lu, expected %lu\n", (void*)this, _in_stream.position_bits(), get_stop_pos());
+            size_t target_stop = get_stop_pos();
+            if (unlikely(_in_stream.position_bits() >= target_stop)) {
+                if (_in_stream.position_bits() != target_stop) {
+                    PRINT_DEBUG(
+                      "%p stoped at %lu, %li bits after expected\n", (void*)this, _in_stream.position_bits(), _in_stream.position_bits() - target_stop);
+                } else {
+                    PRINT_DEBUG("%p stoped at %lu\n", (void*)this, _in_stream.position_bits());
+                }
                 _stop_after.store(unset_stop_pos, std::memory_order_relaxed);
                 return block_result::CAUGHT_UP_DOWNSTREAM;
             }
@@ -1184,6 +1190,10 @@ class DeflateThreadRandomAccess : public DeflateThread
         } else {
             assert(false); // FIXME: parse error in the first block
             // Maybe the synchronisation is a false positive and we should retry at sync_bitpos + 1
+        }
+
+        if (res == block_result::LAST_BLOCK) {
+            PRINT_DEBUG("%p last block at %lu\n", (void*)this, _in_stream.position_bits());
         }
     }
 
