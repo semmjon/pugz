@@ -1030,7 +1030,7 @@ class DeflateThreadRandomAccess : public DeflateThread
 {
 
   public:
-    static constexpr size_t buffer_virtual_size = 128ull << 20;
+    static constexpr size_t buffer_virtual_size = 512ull << 20;
 
     DeflateThreadRandomAccess(const InputStream& input_stream, ConsumerInterface& consumer)
       : DeflateThread(input_stream, consumer)
