@@ -40,6 +40,24 @@ We provide a small example:
 cd example
 bash test.sh
 ``` 
+## Decompression speed benchmark
+
+In progress
+
+| File size | Threads  |  pugz, only counting lines | pugz, full decompression | gunzip  |
+| --------- | :-----: | --------------------------| -------------------------- |  ------|
+| 800 MB  | 1    | MB/s  | MB/s  |  MB/s |
+|   | 8   | MB/s  | MB/s  | N/A |
+| 3 GB | 1   |  MB/s |  MB/s | MB/s  |
+|   | 8   | MB/s  |  MB/s  | N/A |
+
+Script: test/bigger_benchmark.sh
+Specs: i7-4770, 16 GB RAM, SSD
+
+
+## Algorithm overview
+
+Contrary to the [`pigz`](https://github.com/madler/pigz/) program which does single-threaded decompression (see https://github.com/madler/pigz/blob/master/pigz.c#L232), pugz found a way to do truly parallel decompression. In a nutshell: the compressed file is splitted into consecutive sections, processed one after the other. Sections are in turn splitted into chunks (one chunk per thread) and will be decompressed in parallel. A first pass decompresses chunks and keeps track of back-references (see e.g. our paper for the definition of that term), but is unable to resolve them. Then, a quick sequential pass is done to resolve the contexts of all chunks. A final parallel pass translates all unresolved back-references and outputs the file.
 
 ## Roadmap/TODOs
 
@@ -47,13 +65,13 @@ This is a prototype for proof of concept, so expect some rough corners.
 
 If pugz chokes on some of your large files that you are willing to share, please fill a issue !
 
-- Right now, the code is a mix between the libdeflate code base (C with gotos) and prototyped C++. Currently it is mostly organized as a header library. However since the source is quite large, we don't think this is the best distribution for it. The middle-ground would be a PIMPL approach with a virtual ABI and some utility wrappers.
+- **Pugz is not yet a production-ready gzip decompressor**, and may still crash on some files. Or produce undefined behavior when compiled with `make asserts=0`. This is because blocked/multipart files are not currently supported. (support planned)
 
-- Only text files with characters in the range `['\t', '~']` are supported. There is two reasons for that: less false positives when scanning the bitstream for a deflate block, and allows to encode unresolved back-references on 8bits along with the decompressed text. Both are optional optimizations, so a binary mode is eventually conceivable.
+- This codebase is currently only a standalone decompression program, but we would like to turn it into a library with some sort of API (e.g. `parallel_gzread()`, see https://github.com/Piezoid/pugz/issues/6) in order to faciliate integration into your favorite software. Right now, the code is a mix between the libdeflate code base (C with gotos) and prototyped C++. It is mostly organized as a header library; however since the source is quite large, we don't think this is the best distribution for it. The middle-ground would be a PIMPL approach with a virtual ABI and some utility wrappers.
+
+- **Only text files with ASCII characters** in the range `['\t', '~']` are supported. There is two reasons for that: less false positives when scanning the bitstream for a deflate block, and allows to encode unresolved back-references on 8bits along with the decompressed text. Both are optional optimizations, so a binary mode is eventually conceivable.
 
 - Proper error handling is non existent (relies on assertions). Propagating errors between threads can be hard but it must be done eventually.
-
-- Blocked/multipart gzip is not currently supported. (support planned)
 
 - Could generate/use an index file for faster random access in two+ passes scenario.
 
