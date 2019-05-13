@@ -51,7 +51,7 @@ This is a prototype for proof of concept, so expect some rough corners.
 
 If pugz chokes on some of your large files that you are willing to share, please fill a issue !
 
-- **Pugz is not yet a robust gzip decompressor**, and may still crash on some files. Or produce undefined behavior when compiled with `make asserts=0`. This is because blocked/multipart files are not currently supported. (support planned)
+- **Pugz is not yet a production-ready gzip decompressor**, and may still crash on some files. Or produce undefined behavior when compiled with `make asserts=0`. This is because blocked/multipart files are not currently supported. (support planned)
 
 - This codebase is currently only for a standalone decompression program, and we would like to make it easier to be integrated into your favorite software (with an API). Right now, it is a mix between the libdeflate code base (C with gotos) and prototyped C++. Currently it is mostly organized as a header library. However since the source is quite large, we don't think this is the best distribution for it. The middle-ground would be a PIMPL approach with a virtual ABI and some utility wrappers.
 
