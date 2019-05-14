@@ -40,6 +40,20 @@ We provide a small example:
 cd example
 bash test.sh
 ``` 
+## Decompression speed benchmark
+
+In progress
+
+| File size | Threads  |  pugz, only counting lines | pugz, full decompression | gunzip  |
+| --------- | :-----: | --------------------------| -------------------------- |  ------|
+| 800 MB  | 1    | MB/s  | MB/s  |  MB/s |
+|   | 8   | MB/s  | MB/s  | N/A |
+| 3 GB | 1   |  MB/s |  MB/s | MB/s  |
+|   | 8   | MB/s  |  MB/s  | N/A |
+
+Script: test/bigger_benchmark.sh
+Specs: i7-4770, 16 GB RAM, SSD
+
 
 ## Algorithm overview
 
