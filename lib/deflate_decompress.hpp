@@ -1049,7 +1049,7 @@ class DeflateThreadRandomAccess : public DeflateThread
 
     void set_upstream(DeflateThread* up_stream) { _up_stream = up_stream; }
 
-    // Finds a new block of size >= min_block_size bits 
+    // Finds a new block of decompressed size >= min_block_size bits
     // between positions [skip, skip+max_bits_skip] in the compressed stream
     size_t sync(size_t skip,
                 const size_t max_bits_skip = size_t(1) << (3 + 20), // 1MiB
@@ -1090,7 +1090,7 @@ class DeflateThreadRandomAccess : public DeflateThread
     }
 
     // Decompress a chunk starting at position "skipbits" (in bits) in the compressed stream
-    // will guess (by calling sync()) the position of the next block 
+    // will guess (by calling sync()) the position of the next block
     void go(size_t skipbits)
     {
         assert(_up_stream != nullptr);
@@ -1101,7 +1101,8 @@ class DeflateThreadRandomAccess : public DeflateThread
             // We should let the previous thread terminate and do nothing perhaps ?
         }
 
-        // Get the bit position where the block stops, but this isn't even used now 
+        // Get the bit position where the chunk stops. Previously it came from the thread handling the upstream chunk,
+        // now it is set up deterministically from go()'s caller.
         size_t stop_bitpos = get_stop_pos();
         if (stop_bitpos != unset_stop_pos && sync_bitpos >= stop_bitpos) {
             assert(false); // FIXME: We found our first block after where we are supposed to stop
