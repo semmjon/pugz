@@ -929,6 +929,7 @@ class DeflateThread : public DeflateParser
         if (context) { memcpy(_window.current_context().begin(), context.begin(), _window.current_context().size()); }
     }
 
+    // Decompress classically (typically used at position 0) until a certain position
     void go(size_t position_bits = 0)
     {
         wait_for_context_borrow();
@@ -1041,6 +1042,8 @@ class DeflateThreadRandomAccess : public DeflateThread
 
     void set_upstream(DeflateThread* up_stream) { _up_stream = up_stream; }
 
+    // Finds a new block of decompressed size >= min_block_size bits
+    // between positions [skip, skip+max_bits_skip] in the compressed stream
     size_t sync(size_t       skip,
                 const size_t max_bits_skip  = size_t(1) << (3 + 20), // 1MiB
                 const size_t min_block_size = 1 << 13                // 8KiB
@@ -1056,7 +1059,7 @@ class DeflateThreadRandomAccess : public DeflateThread
         for (_in_stream.ensure_bits<1>(); pos < max_pos; pos++) {
             assert(pos == _in_stream.position_bits());
 
-            if (_in_stream.bits<uint8_t>(1)) { // We don't except to find a final block
+            if (_in_stream.bits<uint8_t>(1)) { // We don't expect to find a final block
                 _in_stream.remove_bits(1);
                 _in_stream.ensure_bits<1>();
                 continue;
@@ -1077,6 +1080,8 @@ class DeflateThreadRandomAccess : public DeflateThread
         return 8 * _in_stream.size();
     }
 
+    // Decompress a chunk starting at position "skipbits" (in bits) in the compressed stream
+    // will guess (by calling sync()) the position of the next block
     void go(size_t skipbits)
     {
         assert(_up_stream != nullptr);
@@ -1087,6 +1092,8 @@ class DeflateThreadRandomAccess : public DeflateThread
             // We should let the previous thread terminate and do nothing perhaps ?
         }
 
+        // Get the bit position where the chunk stops. Previously it came from the thread handling the upstream chunk,
+        // now it is set up deterministically from go()'s caller.
         size_t stop_bitpos = get_stop_pos();
         if (stop_bitpos != unset_stop_pos && sync_bitpos >= stop_bitpos) {
             assert(false); // FIXME: We found our first block after where we are supposed to stop
