@@ -934,7 +934,7 @@ class DeflateThread : public DeflateParser
         }
     }
 
-    // Q to Mael: is this ever used?
+    // Decompress classically (typically used at position 0) until a certain position
     void go(size_t position_bits = 0)
     {
         wait_for_context_borrow();
