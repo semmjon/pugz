@@ -416,6 +416,7 @@ template<typename F> struct repeat_t<0, F, void>
     forceinline_fun static void call(F f) { f(); }
 };
 
+/// Repeats the operation N times or until the function returns false
 template<std::size_t N, typename FunctionType>
 forceinline_fun auto
 repeat(FunctionType function) -> decltype(function())
@@ -427,6 +428,7 @@ repeat(FunctionType function) -> decltype(function())
 using vec_t                      = __m128i;
 static constexpr size_t vec_size = sizeof(vec_t);
 
+/// Copy size bytes of cache lines without loading the destination in caches
 static inline void*
 stream_memcpy(void* restrict _dst, const void* restrict _src, size_t size)
 {
@@ -449,6 +451,8 @@ stream_memcpy(void* restrict _dst, const void* restrict _src, size_t size)
     return _dst;
 }
 
+/// Copy sizes bytes from _dst - offset to offset, if offset < size, bytes are repeated.
+/// Size is rounded up to the next multiple of vec_size (16 bytes currently)
 static inline void*
 overlap_memcpy(void* _dst, size_t offset, size_t size)
 {
@@ -949,7 +953,7 @@ class DeflateThread : public DeflateParser
 
     ~DeflateThread()
     {
-        wait_for_context_borrow();
+        wait_for_context_borrow(); // Someone might be reading from our windows, so wait before freeing it.
         PRINT_DEBUG("~DeflateThread()");
     }
 
@@ -1088,7 +1092,7 @@ class DeflateThreadRandomAccess : public DeflateThread
 
         size_t sync_bitpos = sync(skipbits);
         if (sync_bitpos >= 8 * _in_stream.size()) {
-            assert(false); // FIXME: Could not find a block in the region [skipbits, eof[
+            assert(false); // FIXME: Could not find a block in the region [skipbits, eof[ ; Could be due to the file being multi-part (hence not yet supported by pugz)
             // We should let the previous thread terminate and do nothing perhaps ?
         }
 
@@ -1096,7 +1100,7 @@ class DeflateThreadRandomAccess : public DeflateThread
         // now it is set up deterministically from go()'s caller.
         size_t stop_bitpos = get_stop_pos();
         if (stop_bitpos != unset_stop_pos && sync_bitpos >= stop_bitpos) {
-            assert(false); // FIXME: We found our first block after where we are supposed to stop
+            assert(false); // FIXME: We found our first block after where we are supposed to stop; Could be due to the file being multi-part (hence not yet supported by pugz)
         }
 
         // Prepare the wide_window
