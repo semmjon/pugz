@@ -37,21 +37,20 @@
 
 #include "aligned_malloc.h"
 
-void *
+void*
 aligned_malloc(size_t alignment, size_t size)
 {
-	void *ptr = malloc(sizeof(void *) + alignment - 1 + size);
-	if (ptr) {
-		void *orig_ptr = ptr;
-		ptr = (void *)ALIGN((uintptr_t)ptr + sizeof(void *), alignment);
-		((void **)ptr)[-1] = orig_ptr;
-	}
-	return ptr;
+    void* ptr = malloc(sizeof(void*) + alignment - 1 + size);
+    if (ptr) {
+        void* orig_ptr    = ptr;
+        ptr               = (void*)ALIGN((uintptr_t)ptr + sizeof(void*), alignment);
+        ((void**)ptr)[-1] = orig_ptr;
+    }
+    return ptr;
 }
 
 void
-aligned_free(void *ptr)
+aligned_free(void* ptr)
 {
-	if (ptr)
-		free(((void **)ptr)[-1]);
+    if (ptr) free(((void**)ptr)[-1]);
 }

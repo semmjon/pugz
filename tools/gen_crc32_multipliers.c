@@ -29,39 +29,39 @@
 #include <stdio.h>
 
 /* generator polynomial G(x) */
-#define CRCPOLY		0xEDB88320 /* G(x) without x^32 term */
-#define CRCPOLY_FULL	(((uint64_t)CRCPOLY << 1) | 1) /* G(x) */
+#define CRCPOLY 0xEDB88320                          /* G(x) without x^32 term */
+#define CRCPOLY_FULL (((uint64_t)CRCPOLY << 1) | 1) /* G(x) */
 
 /* Compute x^D mod G(x) */
 static uint32_t
 compute_multiplier(int D)
 {
-	/* Start with x^0 mod G(x) */
-	uint32_t remainder = 0x80000000;
+    /* Start with x^0 mod G(x) */
+    uint32_t remainder = 0x80000000;
 
-	/* Each iteration, 'remainder' becomes x^i mod G(x) */
-	for (int i = 1; i <= D; i++)
-		remainder = (remainder >> 1) ^ ((remainder & 1) ? CRCPOLY : 0);
+    /* Each iteration, 'remainder' becomes x^i mod G(x) */
+    for (int i = 1; i <= D; i++)
+        remainder = (remainder >> 1) ^ ((remainder & 1) ? CRCPOLY : 0);
 
-	/* Now 'remainder' is x^D mod G(x) */
-	return remainder;
+    /* Now 'remainder' is x^D mod G(x) */
+    return remainder;
 }
 
 /* Compute floor(x^64 / G(x)) */
 static uint64_t
 compute_barrett_reduction_constant(void)
 {
-	uint64_t quotient = 0;
-	uint64_t dividend = 0x1;
+    uint64_t quotient = 0;
+    uint64_t dividend = 0x1;
 
-	for (int i = 0; i < 64 - 32 + 1; i++) {
-		if ((dividend >> i) & 1) {
-			quotient |= (uint64_t)1 << i;
-			dividend ^= CRCPOLY_FULL << i;
-		}
-	}
+    for (int i = 0; i < 64 - 32 + 1; i++) {
+        if ((dividend >> i) & 1) {
+            quotient |= (uint64_t)1 << i;
+            dividend ^= CRCPOLY_FULL << i;
+        }
+    }
 
-	return quotient;
+    return quotient;
 }
 
 /*
@@ -78,31 +78,31 @@ compute_barrett_reduction_constant(void)
 int
 main(void)
 {
-	printf("\t/* Constants precomputed by gen_crc32_multipliers.c.  "
-	       "Do not edit! */\n");
+    printf("\t/* Constants precomputed by gen_crc32_multipliers.c.  "
+           "Do not edit! */\n");
 
-	/* High and low multipliers for each needed vector count */
-	for (int order = 2; order >= 0; order--) {
-		int vecs_per_iteration = 1 << order;
-		int right = (128 * vecs_per_iteration) + 95;
-		printf("\tconst __v2di multipliers_%d = (__v2di)"
-		       "{ 0x%08"PRIX32", 0x%08"PRIX32" };\n",
-		       vecs_per_iteration,
-		       compute_multiplier(right - 64) /* higher degree half */,
-		       compute_multiplier(right - 128) /* lower degree half */);
-	}
+    /* High and low multipliers for each needed vector count */
+    for (int order = 2; order >= 0; order--) {
+        int vecs_per_iteration = 1 << order;
+        int right              = (128 * vecs_per_iteration) + 95;
+        printf("\tconst __v2di multipliers_%d = (__v2di)"
+               "{ 0x%08" PRIX32 ", 0x%08" PRIX32 " };\n",
+               vecs_per_iteration,
+               compute_multiplier(right - 64) /* higher degree half */,
+               compute_multiplier(right - 128) /* lower degree half */);
+    }
 
-	/* Multiplier for final 96 => 64 bit fold */
-	printf("\tconst __v2di final_multiplier = (__v2di){ 0x%08"PRIX32" };\n",
-	       compute_multiplier(63));
+    /* Multiplier for final 96 => 64 bit fold */
+    printf("\tconst __v2di final_multiplier = (__v2di){ 0x%08" PRIX32 " };\n", compute_multiplier(63));
 
-	/* 32-bit mask */
-	printf("\tconst __m128i mask32 = (__m128i)(__v4si){ 0xFFFFFFFF };\n");
+    /* 32-bit mask */
+    printf("\tconst __m128i mask32 = (__m128i)(__v4si){ 0xFFFFFFFF };\n");
 
-	/* Constants for final 64 => 32 bit reduction */
-	printf("\tconst __v2di barrett_reduction_constants =\n"
-	       "\t\t\t(__v2di){ 0x%016"PRIX64", 0x%016"PRIX64" };\n",
-	       compute_barrett_reduction_constant(), CRCPOLY_FULL);
+    /* Constants for final 64 => 32 bit reduction */
+    printf("\tconst __v2di barrett_reduction_constants =\n"
+           "\t\t\t(__v2di){ 0x%016" PRIX64 ", 0x%016" PRIX64 " };\n",
+           compute_barrett_reduction_constant(),
+           CRCPOLY_FULL);
 
-	return 0;
+    return 0;
 }

@@ -7,7 +7,9 @@
 
 #include "lib_common.h"
 
-extern void *aligned_malloc(size_t alignment, size_t size);
-extern void aligned_free(void *ptr);
+extern void*
+aligned_malloc(size_t alignment, size_t size);
+extern void
+aligned_free(void* ptr);
 
 #endif /* LIB_ALIGNED_MALLOC_H */

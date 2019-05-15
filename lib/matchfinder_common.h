@@ -9,7 +9,7 @@
 #include "unaligned.h"
 
 #ifndef MATCHFINDER_WINDOW_ORDER
-#  error "MATCHFINDER_WINDOW_ORDER must be defined!"
+#    error "MATCHFINDER_WINDOW_ORDER must be defined!"
 #endif
 
 #define MATCHFINDER_WINDOW_SIZE (1UL << MATCHFINDER_WINDOW_ORDER)
@@ -21,27 +21,27 @@ typedef s16 mf_pos_t;
 #define MATCHFINDER_ALIGNMENT 8
 
 #ifdef __AVX2__
-#  include "matchfinder_avx2.h"
-#  if MATCHFINDER_ALIGNMENT < 32
-#    undef MATCHFINDER_ALIGNMENT
-#    define MATCHFINDER_ALIGNMENT 32
-#  endif
+#    include "matchfinder_avx2.h"
+#    if MATCHFINDER_ALIGNMENT < 32
+#        undef MATCHFINDER_ALIGNMENT
+#        define MATCHFINDER_ALIGNMENT 32
+#    endif
 #endif
 
 #ifdef __SSE2__
-#  include "matchfinder_sse2.h"
-#  if MATCHFINDER_ALIGNMENT < 16
-#    undef MATCHFINDER_ALIGNMENT
-#    define MATCHFINDER_ALIGNMENT 16
-#  endif
+#    include "matchfinder_sse2.h"
+#    if MATCHFINDER_ALIGNMENT < 16
+#        undef MATCHFINDER_ALIGNMENT
+#        define MATCHFINDER_ALIGNMENT 16
+#    endif
 #endif
 
 #ifdef __ARM_NEON
-#  include "matchfinder_neon.h"
-#  if MATCHFINDER_ALIGNMENT < 16
-#    undef MATCHFINDER_ALIGNMENT
-#    define MATCHFINDER_ALIGNMENT 16
-#  endif
+#    include "matchfinder_neon.h"
+#    if MATCHFINDER_ALIGNMENT < 16
+#        undef MATCHFINDER_ALIGNMENT
+#        define MATCHFINDER_ALIGNMENT 16
+#    endif
 #endif
 
 /*
@@ -52,27 +52,24 @@ typedef s16 mf_pos_t;
  * 'data' must be aligned to a MATCHFINDER_ALIGNMENT boundary.
  */
 static forceinline void
-matchfinder_init(mf_pos_t *data, size_t num_entries)
+matchfinder_init(mf_pos_t* data, size_t num_entries)
 {
-	size_t i;
+    size_t i;
 
 #if defined(__AVX2__) && defined(_aligned_attribute)
-	if (matchfinder_init_avx2(data, num_entries * sizeof(data[0])))
-		return;
+    if (matchfinder_init_avx2(data, num_entries * sizeof(data[0]))) return;
 #endif
 
 #if defined(__SSE2__) && defined(_aligned_attribute)
-	if (matchfinder_init_sse2(data, num_entries * sizeof(data[0])))
-		return;
+    if (matchfinder_init_sse2(data, num_entries * sizeof(data[0]))) return;
 #endif
 
 #if defined(__ARM_NEON) && defined(_aligned_attribute)
-	if (matchfinder_init_neon(data, num_entries * sizeof(data[0])))
-		return;
+    if (matchfinder_init_neon(data, num_entries * sizeof(data[0]))) return;
 #endif
 
-	for (i = 0; i < num_entries; i++)
-		data[i] = MATCHFINDER_INITVAL;
+    for (i = 0; i < num_entries; i++)
+        data[i] = MATCHFINDER_INITVAL;
 }
 
 /*
@@ -97,46 +94,43 @@ matchfinder_init(mf_pos_t *data, size_t num_entries)
  * the links need to be rebased in the same way.
  */
 static forceinline void
-matchfinder_rebase(mf_pos_t *data, size_t num_entries)
+matchfinder_rebase(mf_pos_t* data, size_t num_entries)
 {
-	size_t i;
+    size_t i;
 
 #if defined(__AVX2__) && defined(_aligned_attribute)
-	if (matchfinder_rebase_avx2(data, num_entries * sizeof(data[0])))
-		return;
+    if (matchfinder_rebase_avx2(data, num_entries * sizeof(data[0]))) return;
 #endif
 
 #if defined(__SSE2__) && defined(_aligned_attribute)
-	if (matchfinder_rebase_sse2(data, num_entries * sizeof(data[0])))
-		return;
+    if (matchfinder_rebase_sse2(data, num_entries * sizeof(data[0]))) return;
 #endif
 
 #if defined(__ARM_NEON) && defined(_aligned_attribute)
-	if (matchfinder_rebase_neon(data, num_entries * sizeof(data[0])))
-		return;
+    if (matchfinder_rebase_neon(data, num_entries * sizeof(data[0]))) return;
 #endif
 
-	if (MATCHFINDER_WINDOW_SIZE == 32768) {
-		/* Branchless version for 32768 byte windows.  If the value was
-		 * already negative, clear all bits except the sign bit; this
-		 * changes the value to -32768.  Otherwise, set the sign bit;
-		 * this is equivalent to subtracting 32768.  */
-		for (i = 0; i < num_entries; i++) {
-			u16 v = data[i];
-			u16 sign_bit = v & 0x8000;
-			v &= sign_bit - ((sign_bit >> 15) ^ 1);
-			v |= 0x8000;
-			data[i] = v;
-		}
-		return;
-	}
+    if (MATCHFINDER_WINDOW_SIZE == 32768) {
+        /* Branchless version for 32768 byte windows.  If the value was
+         * already negative, clear all bits except the sign bit; this
+         * changes the value to -32768.  Otherwise, set the sign bit;
+         * this is equivalent to subtracting 32768.  */
+        for (i = 0; i < num_entries; i++) {
+            u16 v        = data[i];
+            u16 sign_bit = v & 0x8000;
+            v &= sign_bit - ((sign_bit >> 15) ^ 1);
+            v |= 0x8000;
+            data[i] = v;
+        }
+        return;
+    }
 
-	for (i = 0; i < num_entries; i++) {
-		if (data[i] >= 0)
-			data[i] -= (mf_pos_t)-MATCHFINDER_WINDOW_SIZE;
-		else
-			data[i] = (mf_pos_t)-MATCHFINDER_WINDOW_SIZE;
-	}
+    for (i = 0; i < num_entries; i++) {
+        if (data[i] >= 0)
+            data[i] -= (mf_pos_t)-MATCHFINDER_WINDOW_SIZE;
+        else
+            data[i] = (mf_pos_t)-MATCHFINDER_WINDOW_SIZE;
+    }
 }
 
 /*
@@ -147,9 +141,9 @@ matchfinder_rebase(mf_pos_t *data, size_t num_entries)
  * the most randomness.
  */
 static forceinline u32
-lz_hash(u32 seq, unsigned num_bits)
+                   lz_hash(u32 seq, unsigned num_bits)
 {
-	return (u32)(seq * 0x1E35A7BD) >> (32 - num_bits);
+    return (u32)(seq * 0x1E35A7BD) >> (32 - num_bits);
 }
 
 /*
@@ -157,49 +151,44 @@ lz_hash(u32 seq, unsigned num_bits)
  * to a maximum of @max_len.  Initially, @start_len bytes are matched.
  */
 static forceinline unsigned
-lz_extend(const u8 * const strptr, const u8 * const matchptr,
-	  const unsigned start_len, const unsigned max_len)
+lz_extend(const u8* const strptr, const u8* const matchptr, const unsigned start_len, const unsigned max_len)
 {
-	unsigned len = start_len;
-	machine_word_t v_word;
+    unsigned       len = start_len;
+    machine_word_t v_word;
 
-	if (UNALIGNED_ACCESS_IS_FAST) {
+    if (UNALIGNED_ACCESS_IS_FAST) {
 
-		if (likely(max_len - len >= 4 * WORDBYTES)) {
+        if (likely(max_len - len >= 4 * WORDBYTES)) {
 
-		#define COMPARE_WORD_STEP				\
-			v_word = load_word_unaligned(&matchptr[len]) ^	\
-				 load_word_unaligned(&strptr[len]);	\
-			if (v_word != 0)				\
-				goto word_differs;			\
-			len += WORDBYTES;				\
+#define COMPARE_WORD_STEP                                                                                              \
+    v_word = load_word_unaligned(&matchptr[len]) ^ load_word_unaligned(&strptr[len]);                                  \
+    if (v_word != 0) goto word_differs;                                                                                \
+    len += WORDBYTES;
 
-			COMPARE_WORD_STEP
-			COMPARE_WORD_STEP
-			COMPARE_WORD_STEP
-			COMPARE_WORD_STEP
-		#undef COMPARE_WORD_STEP
-		}
+            COMPARE_WORD_STEP
+            COMPARE_WORD_STEP
+            COMPARE_WORD_STEP
+            COMPARE_WORD_STEP
+#undef COMPARE_WORD_STEP
+        }
 
-		while (len + WORDBYTES <= max_len) {
-			v_word = load_word_unaligned(&matchptr[len]) ^
-				 load_word_unaligned(&strptr[len]);
-			if (v_word != 0)
-				goto word_differs;
-			len += WORDBYTES;
-		}
-	}
+        while (len + WORDBYTES <= max_len) {
+            v_word = load_word_unaligned(&matchptr[len]) ^ load_word_unaligned(&strptr[len]);
+            if (v_word != 0) goto word_differs;
+            len += WORDBYTES;
+        }
+    }
 
-	while (len < max_len && matchptr[len] == strptr[len])
-		len++;
-	return len;
+    while (len < max_len && matchptr[len] == strptr[len])
+        len++;
+    return len;
 
 word_differs:
-	if (CPU_IS_LITTLE_ENDIAN())
-		len += (bsfw(v_word) >> 3);
-	else
-		len += (WORDBITS - 1 - bsrw(v_word)) >> 3;
-	return len;
+    if (CPU_IS_LITTLE_ENDIAN())
+        len += (bsfw(v_word) >> 3);
+    else
+        len += (WORDBITS - 1 - bsrw(v_word)) >> 3;
+    return len;
 }
 
 #endif /* LIB_MATCHFINDER_COMMON_H */

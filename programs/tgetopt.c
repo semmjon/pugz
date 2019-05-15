@@ -27,8 +27,8 @@
 
 #include "prog_util.h"
 
-tchar *toptarg;
-int toptind = 1, topterr = 1, toptopt;
+tchar* toptarg;
+int    toptind = 1, topterr = 1, toptopt;
 
 /*
  * This is a simple implementation of getopt().  It can be compiled with either
@@ -41,78 +41,77 @@ int toptind = 1, topterr = 1, toptopt;
  *	- '+' and '-' characters in optstring
  */
 int
-tgetopt(int argc, tchar *argv[], const tchar *optstring)
+tgetopt(int argc, tchar* argv[], const tchar* optstring)
 {
-	static tchar empty[1];
-	static tchar *nextchar;
-	static bool done;
+    static tchar  empty[1];
+    static tchar* nextchar;
+    static bool   done;
 
-	if (toptind == 1) {
-		/* Starting to scan a new argument vector */
-		nextchar = NULL;
-		done = false;
-	}
+    if (toptind == 1) {
+        /* Starting to scan a new argument vector */
+        nextchar = NULL;
+        done     = false;
+    }
 
-	while (!done && (nextchar != NULL || toptind < argc)) {
-		if (nextchar == NULL) {
-			/* Scanning a new argument */
-			tchar *arg = argv[toptind++];
-			if (arg[0] == '-' && arg[1] != '\0') {
-				if (arg[1] == '-' && arg[2] == '\0') {
-					/* All args after "--" are nonoptions */
-					argv[toptind - 1] = NULL;
-					done = true;
-				} else {
-					/* Start of short option characters */
-					nextchar = &arg[1];
-				}
-			}
-		} else {
-			/* More short options in previous arg */
-			tchar opt = *nextchar;
-			tchar *p = tstrchr(optstring, opt);
-			if (p == NULL) {
-				if (topterr)
-					msg("invalid option -- '%"TC"'", opt);
-				toptopt = opt;
-				return '?';
-			}
-			/* 'opt' is a valid short option character */
-			nextchar++;
-			toptarg = NULL;
-			if (*(p + 1) == ':') {
-				/* 'opt' can take an argument */
-				if (*nextchar != '\0') {
-					/* Optarg is in same argv argument */
-					toptarg = nextchar;
-					nextchar = empty;
-				} else if (toptind < argc && *(p + 2) != ':') {
-					/* Optarg is next argv argument */
-					argv[toptind - 1] = NULL;
-					toptarg = argv[toptind++];
-				} else if (*(p + 2) != ':') {
-					if (topterr && *optstring != ':') {
-						msg("option requires an "
-						    "argument -- '%"TC"'", opt);
-					}
-					toptopt = opt;
-					opt = (*optstring == ':') ? ':' : '?';
-				}
-			}
-			if (*nextchar == '\0') {
-				argv[toptind - 1] = NULL;
-				nextchar = NULL;
-			}
-			return opt;
-		}
-	}
+    while (!done && (nextchar != NULL || toptind < argc)) {
+        if (nextchar == NULL) {
+            /* Scanning a new argument */
+            tchar* arg = argv[toptind++];
+            if (arg[0] == '-' && arg[1] != '\0') {
+                if (arg[1] == '-' && arg[2] == '\0') {
+                    /* All args after "--" are nonoptions */
+                    argv[toptind - 1] = NULL;
+                    done              = true;
+                } else {
+                    /* Start of short option characters */
+                    nextchar = &arg[1];
+                }
+            }
+        } else {
+            /* More short options in previous arg */
+            tchar  opt = *nextchar;
+            tchar* p   = tstrchr(optstring, opt);
+            if (p == NULL) {
+                if (topterr) msg("invalid option -- '%" TC "'", opt);
+                toptopt = opt;
+                return '?';
+            }
+            /* 'opt' is a valid short option character */
+            nextchar++;
+            toptarg = NULL;
+            if (*(p + 1) == ':') {
+                /* 'opt' can take an argument */
+                if (*nextchar != '\0') {
+                    /* Optarg is in same argv argument */
+                    toptarg  = nextchar;
+                    nextchar = empty;
+                } else if (toptind < argc && *(p + 2) != ':') {
+                    /* Optarg is next argv argument */
+                    argv[toptind - 1] = NULL;
+                    toptarg           = argv[toptind++];
+                } else if (*(p + 2) != ':') {
+                    if (topterr && *optstring != ':') {
+                        msg("option requires an "
+                            "argument -- '%" TC "'",
+                            opt);
+                    }
+                    toptopt = opt;
+                    opt     = (*optstring == ':') ? ':' : '?';
+                }
+            }
+            if (*nextchar == '\0') {
+                argv[toptind - 1] = NULL;
+                nextchar          = NULL;
+            }
+            return opt;
+        }
+    }
 
-	/* Done scanning.  Move all nonoptions to the end, set optind to the
-	 * index of the first nonoption, and return -1. */
-	toptind = argc;
-	while (--argc > 0)
-		if (argv[argc] != NULL)
-			argv[--toptind] = argv[argc];
-	done = true;
-	return -1;
+    /* Done scanning.  Move all nonoptions to the end, set optind to the
+     * index of the first nonoption, and return -1. */
+    toptind = argc;
+    while (--argc > 0)
+        if (argv[argc] != NULL) argv[--toptind] = argv[argc];
+    done = true;
+    return -1;
 }
