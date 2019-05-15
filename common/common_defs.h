@@ -57,8 +57,7 @@ typedef size_t machine_word_t;
         }
 #else
 #    undef PRINT_DEBUG
-#    define PRINT_DEBUG(...)                                                                                           \
-        {}
+#    define PRINT_DEBUG(...) static_cast<void>(0)
 #endif
 
 #if defined(PRINT_DEBUG_DECODING) && PRINT_DEBUG_DECODING
@@ -70,8 +69,7 @@ typedef size_t machine_word_t;
         }
 #else
 #    undef PRINT_DEBUG_DECODING
-#    define PRINT_DEBUG_DECODING(x)                                                                                    \
-        {}
+#    define PRINT_DEBUG_DECODING(x) static_cast<void>(0)
 #endif
 
 #endif

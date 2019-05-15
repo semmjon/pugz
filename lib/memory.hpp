@@ -153,7 +153,7 @@ template<typename T> class span
     size_t size() const restrict
     {
         assert(_end >= _begin);
-        return _end - _begin;
+        return size_t(_end - _begin);
     }
     bool empty() const restrict { return size() == 0; }
          operator bool() const restrict { return size() != 0; }
@@ -283,7 +283,7 @@ template<typename T, typename D = std::default_delete<T[]>> class unique_span : 
         }
     }
 
-    size_t size() const { return _end - _begin; }
+    size_t size() const { return size_t(_end - _begin); }
     bool   empty() const { return size() == 0; }
            operator bool() const { return size() != 0; }
 
@@ -411,8 +411,8 @@ alloc_mirrored(size_t size, size_t ncopies, const char* shm_name_base = nullptr)
     const size_t nbytes = sizeof(T) * size;
 
     // Create a backing file in tmpfs
-    unsigned fd = details::tmpshm(shm_name_base);
-    sys::check_ret(ftruncate(fd, nbytes), "ftrunctate");
+    int fd = details::tmpshm(shm_name_base);
+    sys::check_ret(ftruncate(fd, ssize_t(nbytes)), "ftrunctate");
 
     // Allocate the virtual contiguous address space
     T* ptr = reinterpret_cast<T*>(sys::check_ptr(

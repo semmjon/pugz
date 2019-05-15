@@ -111,7 +111,8 @@ libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, 
                     // Unmmap the part previously decompressed (free RSS, usefull for large files)
                     const byte* unmap_end
                       = details::round_down<details::huge_page_size>(in_stream.data.begin() + resume_bitpos / 8);
-                    sys::check_ret(munmap(const_cast<byte*>(last_unmapped), unmap_end - last_unmapped), "munmap");
+                    sys::check_ret(munmap(const_cast<byte*>(last_unmapped), size_t(unmap_end - last_unmapped)),
+                                   "munmap");
                     last_unmapped = unmap_end;
 
                     PRINT_DEBUG("%p chunk 0 of section %u: [%lu, %lu[\n",

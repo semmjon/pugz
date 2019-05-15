@@ -348,11 +348,11 @@ build_decode_table(uint32_t       decode_table[],
     uint16_t* const offsets = &working_space[1 * (max_codeword_len + 1)];
     offsets[0]              = 0;
     for (unsigned len = 0; len < max_codeword_len; len++)
-        offsets[len + 1] = offsets[len] + len_counts[len];
+        offsets[len + 1] = uint16_t(offsets[len] + len_counts[len]);
 
     /* Use the 'offsets' array to sort the symbols.  */
     uint16_t* const sorted_syms = &working_space[2 * (max_codeword_len + 1)];
-    for (unsigned sym = 0; sym < num_syms; sym++)
+    for (uint16_t sym = 0; sym < num_syms; sym++)
         sorted_syms[offsets[lens[sym]]++] = sym;
 
     /* It is already guaranteed that all lengths are <= max_codeword_len,
@@ -364,7 +364,7 @@ build_decode_table(uint32_t       decode_table[],
     for (unsigned len = 1; len <= max_codeword_len; len++) {
         remainder <<= 1;
         remainder -= len_counts[len];
-        if (might::fail_if(remainder < 0)) {
+        if (might_tag.fail_if(remainder < 0)) {
             /* The lengths overflow the codespace; that is, the code
              * is over-subscribed.  */
             return false;
@@ -384,7 +384,7 @@ build_decode_table(uint32_t       decode_table[],
             decode_table[sym] = entry;
 
         /* A completely empty code is permitted.  */
-        if (might::succeed_if(remainder == int32_t(1U << max_codeword_len))) return true;
+        if (might_tag.succeed_if(remainder == int32_t(1U << max_codeword_len))) return true;
 
         /* The code is nonempty and incomplete.  Proceed only if there
          * is a single used symbol and its codeword has length 1.  The
@@ -393,7 +393,7 @@ build_decode_table(uint32_t       decode_table[],
          * literal/length and offset codes and assume the codeword is 0
          * rather than 1.  We do the same except we allow this case for
          * precodes too.  */
-        if (might::fail_if(remainder != int32_t(1U << (max_codeword_len - 1)) || len_counts[1] != 1)) return false;
+        if (might_tag.fail_if(remainder != int32_t(1U << (max_codeword_len - 1)) || len_counts[1] != 1)) return false;
     }
 
     /* Generate the decode table entries.  Since we process codewords from
@@ -409,7 +409,7 @@ build_decode_table(uint32_t       decode_table[],
         codeword_len++;
 
     unsigned       codeword_reversed   = 0;
-    unsigned       cur_codeword_prefix = -1;
+    unsigned       cur_codeword_prefix = unsigned(-1);
     unsigned       cur_table_start     = 0;
     unsigned       cur_table_bits      = table_bits;
     unsigned       num_dropped_bits    = 0;
@@ -441,7 +441,7 @@ build_decode_table(uint32_t       decode_table[],
              * incomplete code is a single codeword of length 1,
              * and that never requires any subtables.  */
             cur_table_bits = codeword_len - table_bits;
-            remainder      = (int32_t)1 << cur_table_bits;
+            remainder      = int32_t(1) << cur_table_bits;
             for (;;) {
                 remainder -= len_counts[table_bits + cur_table_bits];
                 if (remainder <= 0) break;
@@ -520,10 +520,7 @@ build_precode_decode_table(struct libdeflate_decompressor* d, const might& might
 /* Build the decode table for the literal/length code.  */
 template<typename might>
 static inline bool
-build_litlen_decode_table(struct libdeflate_decompressor* d,
-                          unsigned                        num_litlen_syms,
-                          unsigned                        num_offset_syms,
-                          const might&                    might_tag)
+build_litlen_decode_table(struct libdeflate_decompressor* d, unsigned num_litlen_syms, const might& might_tag)
 {
     /* When you change TABLEBITS, you must change ENOUGH, and vice versa! */
     static_assert(LITLEN_TABLEBITS == 10 && LITLEN_ENOUGH == 1334, "invalid TABLEBITS");
@@ -592,7 +589,7 @@ prepare_static(struct libdeflate_decompressor* restrict d)
         d->u.l.lens[i] = 5;
 
     assert(build_offset_decode_table(d, DEFLATE_NUM_LITLEN_SYMS, DEFLATE_NUM_OFFSET_SYMS, ShouldSucceed{}));
-    assert(build_litlen_decode_table(d, DEFLATE_NUM_LITLEN_SYMS, DEFLATE_NUM_OFFSET_SYMS, ShouldSucceed{}));
+    assert(build_litlen_decode_table(d, DEFLATE_NUM_LITLEN_SYMS, ShouldSucceed{}));
 }
 
 #endif // DECOMPRESSOR_HPP

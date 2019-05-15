@@ -49,18 +49,18 @@ tgetopt(int argc, tchar* argv[], const tchar* optstring)
 
     if (toptind == 1) {
         /* Starting to scan a new argument vector */
-        nextchar = NULL;
+        nextchar = nullptr;
         done     = false;
     }
 
-    while (!done && (nextchar != NULL || toptind < argc)) {
-        if (nextchar == NULL) {
+    while (!done && (nextchar != nullptr || toptind < argc)) {
+        if (nextchar == nullptr) {
             /* Scanning a new argument */
             tchar* arg = argv[toptind++];
             if (arg[0] == '-' && arg[1] != '\0') {
                 if (arg[1] == '-' && arg[2] == '\0') {
                     /* All args after "--" are nonoptions */
-                    argv[toptind - 1] = NULL;
+                    argv[toptind - 1] = nullptr;
                     done              = true;
                 } else {
                     /* Start of short option characters */
@@ -71,14 +71,14 @@ tgetopt(int argc, tchar* argv[], const tchar* optstring)
             /* More short options in previous arg */
             tchar        opt = *nextchar;
             const tchar* p   = tstrchr(optstring, opt);
-            if (p == NULL) {
+            if (p == nullptr) {
                 if (topterr) msg("invalid option -- '%" TC "'", opt);
                 toptopt = opt;
                 return '?';
             }
             /* 'opt' is a valid short option character */
             nextchar++;
-            toptarg = NULL;
+            toptarg = nullptr;
             if (*(p + 1) == ':') {
                 /* 'opt' can take an argument */
                 if (*nextchar != '\0') {
@@ -87,7 +87,7 @@ tgetopt(int argc, tchar* argv[], const tchar* optstring)
                     nextchar = empty;
                 } else if (toptind < argc && *(p + 2) != ':') {
                     /* Optarg is next argv argument */
-                    argv[toptind - 1] = NULL;
+                    argv[toptind - 1] = nullptr;
                     toptarg           = argv[toptind++];
                 } else if (*(p + 2) != ':') {
                     if (topterr && *optstring != ':') {
@@ -100,8 +100,8 @@ tgetopt(int argc, tchar* argv[], const tchar* optstring)
                 }
             }
             if (*nextchar == '\0') {
-                argv[toptind - 1] = NULL;
-                nextchar          = NULL;
+                argv[toptind - 1] = nullptr;
+                nextchar          = nullptr;
             }
             return opt;
         }
@@ -111,7 +111,7 @@ tgetopt(int argc, tchar* argv[], const tchar* optstring)
      * index of the first nonoption, and return -1. */
     toptind = argc;
     while (--argc > 0)
-        if (argv[argc] != NULL) argv[--toptind] = argv[argc];
+        if (argv[argc] != nullptr) argv[--toptind] = argv[argc];
     done = true;
     return -1;
 }
