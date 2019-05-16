@@ -62,14 +62,14 @@ typedef size_t machine_word_t;
 
 #if defined(PRINT_DEBUG_DECODING) && PRINT_DEBUG_DECODING
 #    undef PRINT_DEBUG_DECODING
-#    define PRINT_DEBUG_DECODING(x)                                                                                    \
+#    define PRINT_DEBUG_DECODING(...)                                                                                  \
         {                                                                                                              \
             fprintf(stderr, __VA_ARGS__);                                                                              \
             fflush(stderr);                                                                                            \
         }
 #else
 #    undef PRINT_DEBUG_DECODING
-#    define PRINT_DEBUG_DECODING(x) static_cast<void>(0)
+#    define PRINT_DEBUG_DECODING(...) static_cast<void>(0)
 #endif
 
 #endif

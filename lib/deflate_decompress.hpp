@@ -123,9 +123,6 @@ class DeflateParser
             default: return block_result::INVALID_BLOCK_TYPE;
         }
 
-        /* Decompressing a Huffman block (either dynamic or static)  */
-        PRINT_DEBUG_DECODING("trying to decode huffman block\n");
-
         /* The main DEFLATE decode loop  */
         for (;;) {
             /* Decode a litlen symbol.  */
@@ -669,7 +666,12 @@ struct DummyWindow
     bool push(char_t c)
     {
         _size++;
-        return (c <= max_value && c >= min_value);
+        if (c <= max_value && c >= min_value) {
+            return true;
+        } else {
+            PRINT_DEBUG_DECODING("Non ascii char literal %u\n", unsigned(c));
+            return false;
+        }
     }
 
     /* return true if it's a reasonable offset, otherwise false */
@@ -679,13 +681,23 @@ struct DummyWindow
         assert(length <= 258);
         assert(offset != 0);
         _size += length;
-        return offset <= context_size;
+        if (offset <= context_size) {
+            return true;
+        } else {
+            PRINT_DEBUG_DECODING("invalid LZ77 offset %lu\n", offset);
+            return false;
+        }
     }
 
     bool copy(InputStream& in, wsize_t length)
     {
         _size += length;
-        return in.check_ascii(length, min_value, max_value);
+        if (in.check_ascii(length, min_value, max_value)) {
+            return true;
+        } else {
+            PRINT_DEBUG_DECODING("Non ascii char in uncompressed block\n");
+            return false;
+        }
     }
 
     /// Move the 32K context to the start of the buffer
@@ -1069,9 +1081,11 @@ class DeflateThreadRandomAccess : public DeflateThread
                 continue;
             }
 
+            PRINT_DEBUG_DECODING("trying to decode huffman block at %lu\n", pos);
+
             block_result res = do_block(dummy_win, dummy_win, ShouldFail{});
 
-            if (unlikely(res == block_result::SUCCESS) && dummy_win.size() >= min_block_size) {
+            if (unlikely(res == block_result::SUCCESS && dummy_win.size() >= min_block_size)) {
                 PRINT_DEBUG("%p Candidate block start at %lubits\n", (void*)this, pos);
                 _in_stream.set_position_bits(pos);
                 _up_stream->set_end_block(pos); // This is not even needed !
@@ -1153,8 +1167,6 @@ class DeflateThreadRandomAccess : public DeflateThread
                 this->set_context(_window.current_context()); // From now on, the window is borrowed
 
                 _consumer.flush(wide_buffer, multiplexer.lkt16bits2chr, narrow_buffer, multiplexer.lkt8bits2chr);
-                // write(STDOUT_FILENO, narrow_window.current_context().begin(),
-                // narrow_window.current_context().size());
             } else if (res == block_result::FLUSH_FAIL) {
                 assert(false); // FIXME: buffer too small for input buffer_virtual_size = 128MiB for 32MiB of input =>
                                // max compression ratio of 4x
