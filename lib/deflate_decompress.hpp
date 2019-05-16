@@ -90,6 +90,20 @@ class DeflateParser
 
     static const char* block_result_to_cstr(block_result result)
     {
+        static constexpr const char* block_result_strings[] = {
+          "SUCCESS",
+          "LAST_BLOCK",
+          "CAUGHT_UP_DOWNSTREAM",
+          "FLUSH_FAIL",
+          "INVALID_BLOCK_TYPE",
+          "INVALID_DYNAMIC_HT",
+          "INVALID_UNCOMPRESSED_BLOCK",
+          "INVALID_LITERAL",
+          "INVALID_MATCH",
+          "TOO_MUCH_INPUT",
+          "NOT_ENOUGH_INPUT",
+          "INVALID_PARSE",
+        };
         return block_result_strings[static_cast<unsigned>(result)];
     }
 
@@ -202,21 +216,6 @@ class DeflateParser
     }
 
   private:
-    static constexpr const char* block_result_strings[] = {
-      "SUCCESS",
-      "LAST_BLOCK",
-      "CAUGHT_UP_DOWNSTREAM",
-      "FLUSH_FAIL",
-      "INVALID_BLOCK_TYPE",
-      "INVALID_DYNAMIC_HT",
-      "INVALID_UNCOMPRESSED_BLOCK",
-      "INVALID_LITERAL",
-      "INVALID_MATCH",
-      "TOO_MUCH_INPUT",
-      "NOT_ENOUGH_INPUT",
-      "INVALID_PARSE",
-    };
-
     template<typename Might = ShouldSucceed> bool prepare_dynamic(const Might& might_tag = {})
     {
 
@@ -907,10 +906,21 @@ template<typename NarrowWindow = Window<uint8_t>, typename WideWindow = Window<u
     bool                  is_compressed = false;
 };
 
+class gzip_error : public std::runtime_error
+{
+  public:
+    using std::runtime_error::runtime_error;
+    gzip_error(DeflateParser::block_result res)
+      : runtime_error(DeflateParser::block_result_to_cstr(res))
+    {}
+};
+
 /// Monomorphic base for passing information accross threads
 class DeflateThread : public DeflateParser
 {
   public:
+    static constexpr size_t unset_stop_pos = ~0UL;
+
     DeflateThread(const InputStream& input_stream, ConsumerInterface& consumer)
       : DeflateParser(input_stream)
       , _consumer(consumer)
@@ -920,15 +930,21 @@ class DeflateThread : public DeflateParser
     std::pair<locked_span<uint8_t>, size_t> get_context()
     {
         auto lock = std::unique_lock<std::mutex>(_mut);
-        while (_context.empty())
+        while (_state == state_t::RUNNING)
             _cond.wait(lock);
-        span<uint8_t> context;
-        std::swap(context, _context);
-        // Signal that the context is used: the thread will be resumed once we release the lock
-        _borrowed_context = false;
-        _cond.notify_all();
-        PRINT_DEBUG("%p give context for block %lu\n", (void*)this, _stoped_at);
-        return {locked_span<uint8_t>{context, std::move(lock)}, _stoped_at};
+
+        if (_state == state_t::BORROWED_CONTEXT) {
+            span<uint8_t> context;
+            std::swap(context, _context);
+            // Signal that the context is used: the thread will be resumed once we release the lock
+            _state = state_t::RUNNING;
+            _cond.notify_all();
+            PRINT_DEBUG("%p give context for block %lu\n", (void*)this, _stoped_at);
+            return {locked_span<uint8_t>{context, std::move(lock)}, _stoped_at};
+        } else {
+            assert(_state == state_t::FAIL);
+            return {locked_span<uint8_t>{}, unset_stop_pos};
+        }
     }
 
     /// Set the position of the first synced block upstream, so that this thread stops before this block */
@@ -970,12 +986,11 @@ class DeflateThread : public DeflateParser
     }
 
   protected:
-    static constexpr size_t unset_stop_pos = ~0UL;
-    void                    wait_for_context_borrow()
+    void wait_for_context_borrow()
     {
         auto lock         = std::unique_lock<std::mutex>(_mut);
-        bool was_borrowed = _borrowed_context;
-        while (_borrowed_context)
+        bool was_borrowed = _state == state_t::BORROWED_CONTEXT;
+        while (_state == state_t::BORROWED_CONTEXT)
             _cond.wait(lock);
 
         if (was_borrowed) PRINT_DEBUG("%p get context borrow back\n", (void*)this);
@@ -990,11 +1005,31 @@ class DeflateThread : public DeflateParser
         }
 #endif
 
-        auto lock         = std::unique_lock<std::mutex>(_mut);
-        _context          = ctx;
-        _stoped_at        = _in_stream.position_bits();
-        _borrowed_context = true; // FIXME: wrong place
+        auto lock  = std::unique_lock<std::mutex>(_mut);
+        _context   = ctx;
+        _stoped_at = _in_stream.position_bits();
+        assert(_state == state_t::RUNNING);
+        _state = state_t::BORROWED_CONTEXT;
         _cond.notify_all();
+    }
+
+    // Enter failed state
+    void fail()
+    {
+        {
+            auto lock = std::unique_lock<std::mutex>(_mut);
+            while (_state == state_t::BORROWED_CONTEXT)
+                _cond.wait(lock);
+
+            _state = state_t::FAIL;
+            _cond.notify_all();
+        }
+    }
+
+    template<typename T> void throw_gzip_error(T msg)
+    {
+        fail();
+        throw gzip_error(msg);
     }
 
     size_t get_stop_pos() const { return _stop_after.load(std::memory_order_acquire); }
@@ -1030,11 +1065,14 @@ class DeflateThread : public DeflateParser
     /* Members for synchronization and communication */
     std::mutex              _mut{};
     std::condition_variable _cond{};
-    std::atomic<size_t>     _stop_after       = {unset_stop_pos}; // Where we should stop
-    size_t                  _stoped_at        = unset_stop_pos;   // Where we stopped
-    span<uint8_t>           _context          = {};
-    bool                    _borrowed_context = false;
+    std::atomic<size_t>     _stop_after = {unset_stop_pos}; // Where we should stop
+    size_t                  _stoped_at  = unset_stop_pos;   // Where we stopped
+    span<uint8_t>           _context    = {};
+    enum class state_t { RUNNING, BORROWED_CONTEXT, FAIL };
+    state_t _state = state_t::RUNNING;
 };
+
+constexpr size_t DeflateThread::unset_stop_pos;
 
 class DeflateThreadRandomAccess : public DeflateThread
 {
@@ -1105,16 +1143,15 @@ class DeflateThreadRandomAccess : public DeflateThread
         assert(_up_stream != nullptr);
 
         size_t sync_bitpos = sync(skipbits);
-        if (sync_bitpos >= 8 * _in_stream.size()) {
-            assert(false); // FIXME: Could not find a block in the region [skipbits, eof[ ; Could be due to the file being multi-part (hence not yet supported by pugz)
-            // We should let the previous thread terminate and do nothing perhaps ?
-        }
 
         // Get the bit position where the chunk stops. Previously it came from the thread handling the upstream chunk,
         // now it is set up deterministically from go()'s caller.
+        // FIXME: With the new setup, this could be combined with the previous check and checked in sync()
         size_t stop_bitpos = get_stop_pos();
         if (stop_bitpos != unset_stop_pos && sync_bitpos >= stop_bitpos) {
-            assert(false); // FIXME: We found our first block after where we are supposed to stop; Could be due to the file being multi-part (hence not yet supported by pugz)
+            // FIXME: We found our first block after where we are supposed to stop; Could be due to the
+            // file being multi-part (hence not yet supported by pugz)
+            throw_gzip_error("Failed to find a gzip block during random access");
         }
 
         // Prepare the wide_window
@@ -1152,12 +1189,7 @@ class DeflateThreadRandomAccess : public DeflateThread
                 narrow_buffer = {narrow_buffer.begin(), narrow_sink.begin()};
 
                 // Get the context and prepare lookup table
-                {
-                    auto upstream_context = _up_stream->get_context();
-                    multiplexer.compose_context(upstream_context.first);
-                    assert(sync_bitpos == upstream_context.second);
-                    // FIXME: if this not the case: redecompress from this position (with resolved context this time)
-                }
+                prepare_lookup_table(sync_bitpos);
 
                 // Translate the context for the next block
                 for (auto& c : _window.current_context()) {
@@ -1168,13 +1200,13 @@ class DeflateThreadRandomAccess : public DeflateThread
 
                 _consumer.flush(wide_buffer, multiplexer.lkt16bits2chr, narrow_buffer, multiplexer.lkt8bits2chr);
             } else if (res == block_result::FLUSH_FAIL) {
-                assert(false); // FIXME: buffer too small for input buffer_virtual_size = 128MiB for 32MiB of input =>
-                               // max compression ratio of 4x
-                // The simplest way to handle that is stop everything and retry with smaller sections/chunks
+                throw_gzip_error(res);
+                // FIXME: buffer too small for input buffer_virtual_size = 512MiB for 32MiB of input => max compression
+                // ratio of 16x. The simplest way to handle that is stop everything and retry with smaller
+                // sections/chunks
             } else {
-                assert(false); // FIXME: find a way to popagate errors...
+                throw_gzip_error(res);
                 // At this point we have narrowed down the back-reference count to 126 and decoded more than 8 block, so
-                // it's really unlikely that the synchronisation is a false positive
             }
 
         } else if (res == block_result::CAUGHT_UP_DOWNSTREAM || res == block_result::LAST_BLOCK) {
@@ -1182,12 +1214,7 @@ class DeflateThreadRandomAccess : public DeflateThread
             _window.clear();
 
             // Get the context and prepare lookup table
-            {
-                auto upstream_context = _up_stream->get_context();
-                multiplexer.compose_context(upstream_context.first);
-                assert(sync_bitpos == upstream_context.second);
-                // FIXME: if this not the case: redecompress from this position (with resolved context this time)
-            }
+            prepare_lookup_table(sync_bitpos);
 
             // Translate the context for the next block
             auto* p = wide_window.current_context().begin();
@@ -1201,9 +1228,10 @@ class DeflateThreadRandomAccess : public DeflateThread
 
             _consumer.flush(wide_buffer, multiplexer.lkt16bits2chr, {}, {});
         } else if (res == block_result::FLUSH_FAIL) {
-            assert(false); // FIXME: buffer overflow, see above
+            throw_gzip_error(res); // FIXME: buffer overflow, see above
         } else {
-            assert(false); // FIXME: parse error in the first block
+            throw_gzip_error(res);
+            // FIXME: parse error in the first blocks (before compressing the backrefs to 8bits)
             // Maybe the synchronisation is a false positive and we should retry at sync_bitpos + 1
         }
 
@@ -1213,6 +1241,23 @@ class DeflateThreadRandomAccess : public DeflateThread
     }
 
   private:
+    bool prepare_lookup_table(size_t sync_bitpos)
+    {
+        auto upstream_context = _up_stream->get_context();
+        if (upstream_context.second == unset_stop_pos) {
+            // Upstream decompressor failed
+            fail();
+            return false;
+        }
+        // Check if the context position we got match with our start position
+        if (upstream_context.second != sync_bitpos) {
+            // FIXME: redecompress from this position (with resolved context this time)
+            throw_gzip_error("Got a context from invalid position");
+        }
+        multiplexer.compose_context(upstream_context.first);
+        return true;
+    }
+
     malloc_span<uint8_t>                                  buffer;
     Window<uint16_t>                                      wide_window = {};
     BackrefMultiplexer<Window<uint8_t>, Window<uint16_t>> multiplexer = {};

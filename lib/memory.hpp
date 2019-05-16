@@ -222,7 +222,8 @@ template<typename T, typename D = std::default_delete<T[]>> class unique_span : 
     using const_reference = const T&;
 
     unique_span() noexcept
-      : _begin(nullptr)
+      : D()
+      , _begin(nullptr)
       , _end(nullptr)
     {}
 
@@ -430,22 +431,18 @@ alloc_mirrored(size_t size, size_t ncopies, const char* shm_name_base = nullptr)
     return {ptr, ncopies * size};
 }
 
-template<typename Lockable = std::mutex> struct lock_releaser
+template<typename Lockable = std::mutex> struct lock_releaser : private std::unique_lock<Lockable>
 {
-    lock_releaser(std::unique_lock<Lockable>&& lock) noexcept
-      : _lock(std::move(lock))
-    {}
+    using std::unique_lock<Lockable>::unique_lock;
 
-    lock_releaser(lock_releaser&&) noexcept = default;
-    lock_releaser& operator=(lock_releaser&&) noexcept = default;
+    lock_releaser(std::unique_lock<Lockable>&& lock) noexcept
+      : std::unique_lock<Lockable>(std::move(lock))
+    {}
 
     template<typename T> void operator()(T*)
     {
-        if (_lock.owns_lock()) _lock.unlock();
+        if (this->owns_lock()) this->unlock();
     }
-
-  private:
-    std::unique_lock<Lockable> _lock;
 };
 
 template<typename T, typename Lockable = std::mutex> using locked_span = unique_span<T, lock_releaser<Lockable>>;
