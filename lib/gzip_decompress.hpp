@@ -44,10 +44,8 @@ static enum libdeflate_result
 libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, Consumer& consumer, ConsumerSync* sync)
 {
     // FIXME: handle header parsing inside DeflateThread*, allowing multimember gzip files
-    InputStream in_stream2(in, in_nbytes);
-    in_stream2.consume_header();
-    InputStream in_stream(in_stream2.in_next, in_stream2.available());
-    size_t      in_size = in_stream2.available();
+    InputStream in_stream(in, in_nbytes);
+    size_t      in_size = in_stream.available();
     nthreads            = std::min(1 + unsigned(in_size >> 21), nthreads);
 
     PRINT_DEBUG("Using %u threads\n", nthreads);
@@ -145,8 +143,6 @@ libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, 
                         nready    = 0; // Stop the thread pool
                     }
                 }
-
-                if (nthreads == 1) deflate_thread.get_context();
             });
         } else {
             threads.emplace_back([&, chunk_idx]() {

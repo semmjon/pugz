@@ -966,17 +966,36 @@ class DeflateThread : public DeflateParser
     {
         wait_for_context_borrow();
 
-        _in_stream.set_position_bits(position_bits);
+        if (position_bits != _in_stream.position_bits()) _in_stream.set_position_bits(position_bits);
 
-        _window.clear();
-        auto res = this->decompress_loop(_window, _consumer, []() { return false; });
+        // For each part in a multipart gzip file:
+        auto res = block_result::LAST_BLOCK;
+        for (; res == block_result::LAST_BLOCK && _in_stream.available() > GZIP_FOOTER_SIZE;) {
+            if (!_in_stream.consume_header()) throw_gzip_error("Invalid gzip header");
 
-        if (res > block_result::CAUGHT_UP_DOWNSTREAM) {
-            assert(false); // FIXME: find a way to popagate errors...
+            _window.clear();
+            res = this->decompress_loop(_window, _consumer, []() { return false; });
+
+            if (res == block_result::LAST_BLOCK) {
+                _in_stream.align_input();
+                if (_in_stream.available() >= GZIP_FOOTER_SIZE) {
+                    _in_stream.consume_footer();
+                    // FIXME: check info in footer
+                    if (_in_stream.available() == 0) {
+                        break; // Last part
+                    }
+                } else {
+                    throw_gzip_error("Invalid gzip footer");
+                }
+            } else {
+                if (res > block_result::CAUGHT_UP_DOWNSTREAM) { throw_gzip_error(res); }
+                this->set_context(_window.current_context());
+                break;
+            }
         }
 
-        this->set_context(_window.current_context());
         _consumer.flush(_window.flushable(), true);
+        return;
     }
 
     ~DeflateThread()

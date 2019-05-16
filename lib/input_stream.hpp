@@ -199,7 +199,7 @@ class InputStream
     ssize_t consume_footer()
     {
         align_input();
-        if (reinterpret_cast<uintptr_t>(in_next) % alignof(uint32_t) == 0 || available() < GZIP_FOOTER_SIZE) return -1;
+        if (available() < GZIP_FOOTER_SIZE) return -1;
 
         static_assert(sizeof(uint32_t[2]) == GZIP_FOOTER_SIZE, "Gzip footer size doesn't match sizeof(uint32_t[2])");
         uint32_t footer[2];
