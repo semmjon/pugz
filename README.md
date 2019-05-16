@@ -42,17 +42,25 @@ bash test.sh
 ``` 
 ## Decompression speed benchmark
 
-In progress
-
 | File size | Threads  |  pugz, only counting lines | pugz, full decompression | gunzip  |
-| --------- | :-----: | --------------------------| -------------------------- |  ------|
-| 800 MB  | 1    | MB/s  | MB/s  |  MB/s |
-|   | 8   | MB/s  | MB/s  | N/A |
-| 3 GB | 1   |  MB/s |  MB/s | MB/s  |
-|   | 8   | MB/s  |  MB/s  | N/A |
+| --------- | :------: | -------------------------- | ------------------------ |  ------ |
+| 2.7 GB    | 1        | 145 MB/s                   | 147 MB/s                 | 55 MB/s |
+|           | 3        | 291 MB/s                   | 205 MB/s                 | N/A     |
+|           | 6        | 515 MB/s                   | 228 MB/s                 | N/A     |
+|           | 12       | 769 MB/s                   | 248 MB/s                 | N/A     |
+|           | 24       | 1052 MB/s                  | 251 MB/s                 | N/A     |
+| 24 GB     | 1        | 137 MB/s                   | 144 MB/s                 | 46 MB/s |
+|           | 3        | 249 MB/s                   | 183 MB/s                 | N/A     |
+|           | 6        | 483 MB/s                   | 196 MB/s                 | N/A     |
+|           | 12       | 865 MB/s                   | 212 MB/s                 | N/A     |
+|           | 24       | 1068 MB/s                  | 212 MB/s                 | N/A     |
 
-Script: test/bigger_benchmark.sh
-Specs: i7-4770, 16 GB RAM, SSD
+Script: `test/bigger_benchmark.sh`
+Specs: 2x Xeon X5675, 32 GB RAM, SSD
+
+ * Note that the synchronization required for writing to the standard output ("pugz, full decompression" case) diminishes a lot the speed up. This is not required if your application can process chunks out of order. Also, this issue can be improved in the future with better IO handling.
+
+ * Contrary to gzip, we don't perform CRC32 calculation? It would roughly inflict a 33% slowdown.
 
 
 ## Algorithm overview
@@ -67,7 +75,7 @@ If pugz chokes on some of your large files that you are willing to share, please
 
 - **Pugz is not yet a production-ready gzip decompressor**, and may still crash on some files. Or produce undefined behavior when compiled with `make asserts=0`. This is because blocked/multipart files are not currently supported. (support planned)
 
-- This codebase is currently only a standalone decompression program, but we would like to turn it into a library with some sort of API (e.g. `parallel_gzread()`, see https://github.com/Piezoid/pugz/issues/6) in order to faciliate integration into your favorite software. Right now, the code is a mix between the libdeflate code base (C with gotos) and prototyped C++. It is mostly organized as a header library; however since the source is quite large, we don't think this is the best distribution for it. The middle-ground would be a PIMPL approach with a virtual ABI and some utility wrappers.
+- This codebase is currently only a standalone decompression program, but we would like to turn it into a library with some sort of API (e.g. `parallel_gzread()`, see [issue #6](https://github.com/Piezoid/pugz/issues/6) for discussion) in order to faciliate integration into your favorite software. Right now, the code is a mix between the libdeflate code base (C with gotos) and prototyped C++. It is mostly organized as a header library; however since the source is quite large, we don't think this is the best distribution for it. The middle-ground would be a PIMPL approach with a virtual ABI and some utility wrappers.
 
 - **Only text files with ASCII characters** in the range `['\t', '~']` are supported. There is two reasons for that: less false positives when scanning the bitstream for a deflate block, and allows to encode unresolved back-references on 8bits along with the decompressed text. Both are optional optimizations, so a binary mode is eventually conceivable.
 

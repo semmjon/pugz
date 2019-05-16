@@ -13,5 +13,5 @@ echo -e "\n\ncounting lines with system's gunzip and wc -l"
 time gunzip -c docword.nytimes.txt.gz | wc -l
 echo -e "\ncounting lines with pugz, 1 thread"
 time ../gunzip -l docword.nytimes.txt.gz
-echo -e "\ncounting lineswith pugz, 8 threads"
+echo -e "\ncounting lines with pugz, 8 threads"
 time ../gunzip -l -t 8 docword.nytimes.txt.gz
