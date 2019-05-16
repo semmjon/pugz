@@ -42,25 +42,30 @@ bash test.sh
 ``` 
 ## Decompression speed benchmark
 
-| File size | Threads  |  pugz, only counting lines | pugz, full decompression | gunzip  |
-| --------- | :------: | -------------------------- | ------------------------ |  ------ |
-| 2.7 GB    | 1        | 145 MB/s                   | 147 MB/s                 | 55 MB/s |
-|           | 3        | 291 MB/s                   | 205 MB/s                 | N/A     |
-|           | 6        | 515 MB/s                   | 228 MB/s                 | N/A     |
-|           | 12       | 769 MB/s                   | 248 MB/s                 | N/A     |
-|           | 24       | 1052 MB/s                  | 251 MB/s                 | N/A     |
-| 24 GB     | 1        | 137 MB/s                   | 144 MB/s                 | 46 MB/s |
-|           | 3        | 249 MB/s                   | 183 MB/s                 | N/A     |
-|           | 6        | 483 MB/s                   | 196 MB/s                 | N/A     |
-|           | 12       | 865 MB/s                   | 212 MB/s                 | N/A     |
-|           | 24       | 1068 MB/s                  | 212 MB/s                 | N/A     |
+| Threads  | gunzip  | pugz, full decompression | pugz, only counting lines  |
+| :------: | ------- | ------------------------ | -------------------------- | 
+| 1        | 55 MB/s | 147 MB/s                 | 145 MB/s                   | 
+| 3        | -       | 205 MB/s                 | 291 MB/s                   |
+| 6        | -       | 228 MB/s                 | 515 MB/s                   | 
+| 12       | -       | 248 MB/s                 | 769 MB/s                   | 
+| 24       | -       | 251 MB/s                 | **1052 MB/s**              |
 
-Script: `test/bigger_benchmark.sh`
-Specs: 2x Xeon X5675, 32 GB RAM, SSD
+Specs: dual Xeon X5675 (2x 6C/12T), 32 GB RAM NUMA, SSD
 
- * Note that the synchronization required for writing to the standard output ("pugz, full decompression" case) diminishes a lot the speed up. This is not required if your application can process chunks out of order. Also, this issue can be improved in the future with better IO handling.
+On a more recent desktop computer (i7-4770 4C/8T, 16 GB RAM, SSD):
 
- * Contrary to gzip, we don't perform CRC32 calculation? It would roughly inflict a 33% slowdown.
+| Threads  | gunzip  | pugz, full decompression | pugz, only counting lines  |
+| :------: | ------- | ------------------------ | -------------------------- |
+| 1        | 63 MB/s | 172 MB/s                 | 170 MB/s                   |
+| 8        | -       | 376 MB/s                 | 565 MB/s                   |
+
+Tested on a 2.7 GB compressed file, with similar results on a 24 GB file.
+
+Script: https://github.com/Piezoid/pugz/blob/master/example/bigger_benchmark.sh
+
+ * Note that the synchronization required for writing to the standard output *in order* ("pugz, full decompression" column) diminishes a lot the speed up. This is not required if your application can process chunks **out of order**. Also, this issue can be improved in the future with better IO handling.
+
+ * Contrary to gzip, we don't perform CRC32 calculation. It would roughly inflict a 33% slowdown.
 
 
 ## Algorithm overview
