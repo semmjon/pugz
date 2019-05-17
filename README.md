@@ -42,6 +42,8 @@ bash test.sh
 ``` 
 ## Decompression speed benchmark
 
+Speed is measured in input compressed bytes processed per second.
+
 | Threads  | gunzip  | pugz, full decompression | pugz, only counting lines  |
 | :------: | ------- | ------------------------ | -------------------------- | 
 | 1        | 55 MB/s | 147 MB/s                 | 145 MB/s                   | 
