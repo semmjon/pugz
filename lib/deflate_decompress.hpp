@@ -971,9 +971,7 @@ class DeflateThread : public DeflateParser
         _window.clear();
         auto res = this->decompress_loop(_window, _consumer, []() { return false; });
 
-        if (res > block_result::CAUGHT_UP_DOWNSTREAM) {
-            assert(false); // FIXME: find a way to popagate errors...
-        }
+        if (res > block_result::CAUGHT_UP_DOWNSTREAM) { throw_gzip_error(res); }
 
         this->set_context(_window.current_context());
         _consumer.flush(_window.flushable(), true);
@@ -1000,6 +998,7 @@ class DeflateThread : public DeflateParser
     void set_context(span<uint8_t> ctx)
     {
 #ifndef NDEBUG
+        PRINT_DEBUG("%p set context\n", (void*)this);
         for (uint8_t c : ctx) {
             assert(c >= Window<uint8_t>::min_value && c <= Window<uint8_t>::max_value);
         }
@@ -1016,14 +1015,13 @@ class DeflateThread : public DeflateParser
     // Enter failed state
     void fail()
     {
-        {
-            auto lock = std::unique_lock<std::mutex>(_mut);
-            while (_state == state_t::BORROWED_CONTEXT)
-                _cond.wait(lock);
+        PRINT_DEBUG("%p failed\n", (void*)this);
+        auto lock = std::unique_lock<std::mutex>(_mut);
+        while (_state == state_t::BORROWED_CONTEXT)
+            _cond.wait(lock);
 
-            _state = state_t::FAIL;
-            _cond.notify_all();
-        }
+        _state = state_t::FAIL;
+        _cond.notify_all();
     }
 
     template<typename T> void throw_gzip_error(T msg)
@@ -1138,7 +1136,7 @@ class DeflateThreadRandomAccess : public DeflateThread
 
     // Decompress a chunk starting at position "skipbits" (in bits) in the compressed stream
     // will guess (by calling sync()) the position of the next block
-    void go(size_t skipbits)
+    bool go(size_t skipbits)
     {
         assert(_up_stream != nullptr);
 
@@ -1189,7 +1187,7 @@ class DeflateThreadRandomAccess : public DeflateThread
                 narrow_buffer = {narrow_buffer.begin(), narrow_sink.begin()};
 
                 // Get the context and prepare lookup table
-                prepare_lookup_table(sync_bitpos);
+                if (!prepare_lookup_table(sync_bitpos)) return false;
 
                 // Translate the context for the next block
                 for (auto& c : _window.current_context()) {
@@ -1214,7 +1212,7 @@ class DeflateThreadRandomAccess : public DeflateThread
             _window.clear();
 
             // Get the context and prepare lookup table
-            prepare_lookup_table(sync_bitpos);
+            if (!prepare_lookup_table(sync_bitpos)) return false;
 
             // Translate the context for the next block
             auto* p = wide_window.current_context().begin();
@@ -1238,6 +1236,7 @@ class DeflateThreadRandomAccess : public DeflateThread
         if (res == block_result::LAST_BLOCK) {
             PRINT_DEBUG("%p last block at %lu\n", (void*)this, _in_stream.position_bits());
         }
+        return true;
     }
 
   private:

@@ -144,6 +144,7 @@ libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, 
                         exception = std::current_exception();
                         nready    = 0; // Stop the thread pool
                     }
+                    return;
                 }
 
                 if (nthreads == 1) deflate_thread.get_context();
@@ -184,7 +185,7 @@ libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, 
                         deflate_thread.set_end_block(stop * 8);
 
                         consumer_wrapper.set_section_idx(section_idx);
-                        deflate_thread.go(start * 8);
+                        if (!deflate_thread.go(start * 8)) return;
                         assert(chunk_idx != nthreads - 1 || stop == section_offset + section_size);
                     }
 
@@ -198,6 +199,7 @@ libdeflate_gzip_decompress(const byte* in, size_t in_nbytes, unsigned nthreads, 
                         exception = std::current_exception();
                         nready    = 0; // Stop the thread pool
                     }
+                    return;
                 }
             });
         }
