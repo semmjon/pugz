@@ -434,6 +434,7 @@ alloc_mirrored(size_t size, size_t ncopies, const char* shm_name_base = nullptr)
 template<typename Lockable = std::mutex> struct lock_releaser : private std::unique_lock<Lockable>
 {
     using std::unique_lock<Lockable>::unique_lock;
+    lock_releaser() noexcept = default;
 
     lock_releaser(std::unique_lock<Lockable>&& lock) noexcept
       : std::unique_lock<Lockable>(std::move(lock))

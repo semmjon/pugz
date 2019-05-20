@@ -229,17 +229,18 @@ class InputStream
 
     bool set_position_bits(size_t bit_pos)
     {
-        size_t bytes = bit_pos >> 3u;
-        size_t bits  = bit_pos & 7;
-        in_next      = data.begin() + bytes;
+        size_t pos_bytes = bit_pos >> 3u;
+        size_t pos_bits  = bit_pos & 7;
+
+        in_next = data.begin() + pos_bytes;
         assert(data.includes(in_next));
 
         if (unlikely(available() < sizeof(bitbuf_t))) return false;
 
         memcpy(&bitbuf, in_next, sizeof(bitbuf_t));
         in_next += +sizeof(bitbuf_t);
-        bitbuf >>= bits;
-        bitsleft = bitbuf_length - bits;
+        bitbuf >>= pos_bits;
+        bitsleft = bitbuf_length - pos_bits;
 
         assert(position_bits() == bit_pos);
         return true;
