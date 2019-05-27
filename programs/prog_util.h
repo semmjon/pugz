@@ -34,7 +34,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "common_defs.h"
+#include "common.hpp"
 
 #ifdef __GNUC__
 #    define _printf(str_idx, args_idx) __attribute__((format(printf, str_idx, args_idx)))

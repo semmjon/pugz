@@ -1,7 +1,6 @@
 #ifndef DECOMPRESSOR_HPP
 #define DECOMPRESSOR_HPP
 
-#include "common_defs.h"
 #include "assert.hpp"
 #include "lib/deflate_constants.h"
 #include "libdeflate.h"

@@ -3,7 +3,7 @@
 
 #include <cstdio>
 
-#include "common_defs.h"
+#include "common.hpp"
 
 #ifdef NDEBUG
 #    define assert(expr) (likely((expr)) ? static_cast<void>(0) : __builtin_unreachable())

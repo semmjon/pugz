@@ -88,4 +88,41 @@ noreturn_attr noinline_fun inline void
 
 #endif
 
+#ifdef __cpp_lib_byte
+using byte = std::byte;
+#else
+enum class byte : unsigned char {};
+#endif
+
+/*
+ * Word type of the target architecture.  Use 'size_t' instead of 'unsigned
+ * long' to account for platforms such as Windows that use 32-bit 'unsigned
+ * long' on 64-bit architectures.
+ */
+typedef size_t machine_word_t;
+
+#if defined(PRINT_DEBUG) && PRINT_DEBUG
+#    undef PRINT_DEBUG
+#    define PRINT_DEBUG(...)                                                                                           \
+        {                                                                                                              \
+            fprintf(stderr, __VA_ARGS__);                                                                              \
+            fflush(stderr);                                                                                            \
+        }
+#else
+#    undef PRINT_DEBUG
+#    define PRINT_DEBUG(...) static_cast<void>(0)
+#endif
+
+#if defined(PRINT_DEBUG_DECODING) && PRINT_DEBUG_DECODING
+#    undef PRINT_DEBUG_DECODING
+#    define PRINT_DEBUG_DECODING(...)                                                                                  \
+        {                                                                                                              \
+            fprintf(stderr, __VA_ARGS__);                                                                              \
+            fflush(stderr);                                                                                            \
+        }
+#else
+#    undef PRINT_DEBUG_DECODING
+#    define PRINT_DEBUG_DECODING(...) static_cast<void>(0)
+#endif
+
 #endif // GATBL_COMMON_HPP

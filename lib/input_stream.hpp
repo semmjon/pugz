@@ -5,7 +5,6 @@
 #include <type_traits>
 
 #include "memory.hpp"
-#include "common_defs.h"
 #include "assert.hpp"
 #include "gzip_constants.h"
 

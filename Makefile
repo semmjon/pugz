@@ -18,12 +18,12 @@
 cc-option = $(shell if $(CXX) $(1) -c -x c /dev/null -o /dev/null \
 	      1>&2 2>/dev/null; then echo $(1); else echo $(2); fi)
 
-override CFLAGS += -std=c++14 -mssse3 -I. -Icommon -lpthread               \
-        -Iexternal/type_safe/include                                       \
-        -Iexternal/type_safe/external/debug_assert                         \
-        -Wall -Wextra -Wpedantic -Wundef -Wnull-dereference -Wuseless-cast \
-        -Wshadow -Weffc++ -Wconversion -Wdisabled-optimization             \
-        -Wparentheses -Wpointer-arith -Wno-ignored-attributes
+WARNS := -Wall -Wextra -Weffc++ -Wpedantic -Wundef -Wuseless-cast -Wconversion -Wshadow
+WARNS += -Wdisabled-optimization -Wparentheses -Wpointer-arith
+WARNS += $(cc-option -Wnull-dereference)
+WARNS += $(cc-option -Wno-ignored-attributes)
+
+override CFLAGS += -std=c++11 -mssse3 -I. -Icommon $(WARNS)
 
 ##############################################################################
 
@@ -32,14 +32,14 @@ SHARED_LIB_SUFFIX := .so
 SHARED_LIB_CFLAGS := -fPIC
 PROG_SUFFIX       :=
 PROG_CFLAGS       :=
-HARD_LINKS        := 1
+
 
 #debugging options for decompression (Rayan)
 
 # Enable assertion by default (for now)
 ifeq ($(debug),1)
     asserts=1
-    override CFLAGS += -O0 -ggdb
+    override CFLAGS += -O0 -g
 else
     override CFLAGS += -O3 $(call cc-option,-flto=jobserver,-flto) -march=native -mtune=native -g
 endif
@@ -155,8 +155,7 @@ $(SHARED_LIB):$(SHARED_LIB_OBJ)
 
 PROG_CFLAGS += $(CFLAGS)		 \
 	       -D_POSIX_C_SOURCE=200809L \
-	       -D_FILE_OFFSET_BITS=64	 \
-	       -DHAVE_CONFIG_H
+	       -D_FILE_OFFSET_BITS=64
 
 PROG_COMMON_HEADERS := programs/prog_util.h  $(LIB_HEADERS)
 PROG_COMMON_SRC     := programs/prog_util.cpp programs/tgetopt.cpp
@@ -184,10 +183,7 @@ $(PROG_OBJ): %.o: %.cpp $(PROG_COMMON_HEADERS) $(COMMON_HEADERS) .prog-cflags
 # test programs must be linked with zlib for doing comparisons.
 
 $(NONTEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ) $(STATIC_LIB)
-	+$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+ -lrt
-
-$(TEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ) $(STATIC_LIB)
-	+$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+ -lz -lrt
+	+$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+ -lpthread -lrt
 
 
 DEFAULT_TARGETS += gunzip$(PROG_SUFFIX)

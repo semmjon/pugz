@@ -178,7 +178,7 @@ template<typename T> class span
     bool                      bounds(const T* p) const restrict { return p >= _begin && p <= _end; }
     bool                      includes(const T* p) const restrict { return p >= _begin && p < _end; }
     bool                      includes(const T* b, const T* e) const restrict { return b >= _begin && e <= _end; }
-    template<typename R> auto includes(const R& r) -> decltype(includes(r.begin, r.end)) const restrict
+    template<typename R> auto includes(const R& r) -> decltype(includes(r.begin, r.end)) const
     {
         return r.begin() >= _begin && r.end() <= _end;
     }
@@ -369,6 +369,36 @@ template<typename T> struct free_deleter<T[]>
 
 template<typename T> using malloc_span = unique_span<T, free_deleter<T[]>>;
 
+#ifdef __linux__
+// Bet that if the libc doesn't support these, the kernel does. Otherwise it's just a nonop.
+#    ifndef MADV_HUGEPAGE
+#        define MADV_HUGEPAGE 15
+#    endif
+
+#    ifndef MADV_DONTDUMP
+#        define MADV_DONTDUMP 16
+#    endif
+
+inline void
+madvise_huge(void* addr, size_t len, bool dontdump = true)
+{
+    // In general, regions with huge page contains data that should not be in coredumps
+    if (dontdump) madvise(addr, len, MADV_DONTDUMP);
+
+    addr = details::round_up<details::huge_page_size>(addr);
+    len  = details::round_down<details::huge_page_size>(len);
+
+    auto res = ::madvise(addr, len, MADV_HUGEPAGE);
+    static_cast<void>(res);
+    PRINT_DEBUG("madvise(%p, 0x%lx, MADV_HUGEPAGE)=%d\n", addr, len, res);
+}
+
+#else
+inline void
+madvise_huge(void* p, size_t size)
+{}
+#endif
+
 template<typename T>
 inline malloc_span<T>
 alloc_huge(size_t n)
@@ -379,9 +409,7 @@ alloc_huge(size_t n)
     T* ptr;
     if (posix_memalign(reinterpret_cast<void**>(&ptr), details::huge_page_size, bytes) != 0) throw std::bad_alloc();
 
-    auto res = ::madvise(ptr, bytes, MADV_HUGEPAGE);
-    static_cast<void>(res);
-    PRINT_DEBUG("madvise(%p, 0x%lx, HUGEPAGE)=%d\n", ptr, bytes, res);
+    madvise_huge(ptr, bytes);
     return malloc_span<T>(ptr, bytes / sizeof(T));
 }
 
