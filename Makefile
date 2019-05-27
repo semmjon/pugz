@@ -133,7 +133,7 @@ $(SHARED_LIB_OBJ): %.shlib.o: %.c $(LIB_HEADERS) $(COMMON_HEADERS) .lib-cflags
 $(STATIC_LIB):$(STATIC_LIB_OBJ) $(STATIC_LIB_OBJ_CXX)
 	+$(QUIET_AR) $(AR) cr $@ $+
 
-DEFAULT_TARGETS += $(STATIC_LIB)
+#DEFAULT_TARGETS += $(STATIC_LIB)
 
 # Create shared library
 $(SHARED_LIB):$(SHARED_LIB_OBJ)
@@ -182,7 +182,7 @@ $(PROG_OBJ): %.o: %.cpp $(PROG_COMMON_HEADERS) $(COMMON_HEADERS) .prog-cflags
 # Note: the test programs are not compiled by default.  One reason is that the
 # test programs must be linked with zlib for doing comparisons.
 
-$(NONTEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ) $(STATIC_LIB)
+$(NONTEST_PROGRAMS): %$(PROG_SUFFIX): programs/%.o $(PROG_COMMON_OBJ)
 	+$(QUIET_CCLD) $(CXX) -o $@ $(LDFLAGS) $(PROG_CFLAGS) $+ -lpthread -lrt
 
 
