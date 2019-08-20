@@ -98,6 +98,18 @@ This project is licensed under the MIT License.
 
 * [M. Kerbiriou, R. Chikhi, Parallel decompression of gzip-compressed files and random access to DNA sequences, HiCOMB 2019](paper/paper.pdf)
 
+```
+@inproceedings{pugz,
+author = {Kerbiriou, Mael and Chikhi, Rayan},
+year = {2019},
+month = {05},
+pages = {209-217},
+title = {Parallel Decompression of Gzip-Compressed Files and Random Access to DNA Sequences},
+doi = {10.1109/IPDPSW.2019.00042},
+booktitle={2019 IEEE International Parallel and Distributed Processing Symposium Workshops (IPDPSW)}
+}
+```
+
 ## Acknowledgements
 
 [ebiggers](https://github.com/ebiggers) for writing [libdeflate](https://github.com/ebiggers/libdeflate)
