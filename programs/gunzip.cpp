@@ -143,7 +143,7 @@ tmain(int argc, tchar* argv[])
     int            i;
     int            ret;
 
-    _program_invocation_name = get_filename(argv[0]);
+    program_invocation_name = get_filename(argv[0]);
 
     options.count_lines = false;
     options.nthreads    = 1;

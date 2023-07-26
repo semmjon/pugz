@@ -160,15 +160,15 @@ timer_MB_per_s(uint64_t bytes, uint64_t ticks)
  * properly for directories, since a path to a directory might have trailing
  * slashes.
  */
-const tchar*
-get_filename(const tchar* path)
+tchar*
+get_filename(tchar* path)
 {
     const tchar* slash = tstrrchr(path, '/');
 #ifdef _WIN32
     const tchar* backslash = tstrrchr(path, '\\');
     if (backslash != nullptr && (slash == nullptr || backslash > slash)) slash = backslash;
 #endif
-    if (slash != nullptr) return slash + 1;
+    if (slash != nullptr) return const_cast<char*>(slash + 1);
     return path;
 }
 

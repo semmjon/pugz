@@ -145,11 +145,11 @@ class InputStream
         const byte* p = in_next;
 
         /* ID1 */
-        if (*p++ != GZIP_ID1) return false;
+        if ((int)*p++ != GZIP_ID1) return false;
         /* ID2 */
-        if (*p++ != GZIP_ID2) return false;
+        if ((int)*p++ != GZIP_ID2) return false;
         /* CM */
-        if (*p++ != GZIP_CM_DEFLATE) return false;
+        if ((int)*p++ != GZIP_CM_DEFLATE) return false;
         auto flg = static_cast<uint8_t>(*p++);
         /* MTIME */
         p += 4;
