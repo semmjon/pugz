@@ -1,0 +1,377 @@
+The system is: Linux - 6.4.4-200.fc38.x86_64 - x86_64
+Compiling the C compiler identification source file "CMakeCCompilerId.c" succeeded.
+Compiler: /usr/bin/cc 
+Build flags: 
+Id flags:  
+
+The output was:
+0
+
+
+Compilation of the C compiler identification source "CMakeCCompilerId.c" produced "a.out"
+
+The C compiler identification is GNU, found in "/home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/3.25.2/CompilerIdC/a.out"
+
+Detecting C compiler ABI info compiled with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-6yfgqo
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_9a889 && [1/2] Building C object CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.o
+Using built-in specs.
+COLLECT_GCC=/usr/bin/cc
+OFFLOAD_TARGET_NAMES=nvptx-none
+OFFLOAD_TARGET_DEFAULT=1
+Target: x86_64-redhat-linux
+Configured with: ../configure --enable-bootstrap --enable-languages=c,c++,fortran,objc,obj-c++,ada,go,d,m2,lto --prefix=/usr --mandir=/usr/share/man --infodir=/usr/share/info --with-bugurl=http://bugzilla.redhat.com/bugzilla --enable-shared --enable-threads=posix --enable-checking=release --enable-multilib --with-system-zlib --enable-__cxa_atexit --disable-libunwind-exceptions --enable-gnu-unique-object --enable-linker-build-id --with-gcc-major-version-only --enable-libstdcxx-backtrace --with-libstdcxx-zoneinfo=/usr/share/zoneinfo --with-linker-hash-style=gnu --enable-plugin --enable-initfini-array --with-isl=/builddir/build/BUILD/gcc-13.1.1-20230614/obj-x86_64-redhat-linux/isl-install --enable-offload-targets=nvptx-none --without-cuda-driver --enable-offload-defaulted --enable-gnu-indirect-function --enable-cet --with-tune=generic --with-arch_32=i686 --build=x86_64-redhat-linux --with-build-config=bootstrap-lto --enable-link-serialization=1
+Thread model: posix
+Supported LTO compression algorithms: zlib zstd
+gcc version 13.1.1 20230614 (Red Hat 13.1.1-4) (GCC) 
+COLLECT_GCC_OPTIONS='-fdiagnostics-color=always' '-v' '-o' 'CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_9a889.dir/'
+ /usr/libexec/gcc/x86_64-redhat-linux/13/cc1 -quiet -v /home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/cmake/linux/x64/share/cmake-3.25/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_9a889.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -mtune=generic -march=x86-64 -version -fdiagnostics-color=always -o /tmp/ccDeba3G.s
+GNU C17 (GCC) version 13.1.1 20230614 (Red Hat 13.1.1-4) (x86_64-redhat-linux)
+	compiled by GNU C version 13.1.1 20230614 (Red Hat 13.1.1-4), GMP version 6.2.1, MPFR version 4.1.1-p1, MPC version 1.3.1, isl version isl-0.24-GMP
+
+GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+ignoring nonexistent directory "/usr/lib/gcc/x86_64-redhat-linux/13/include-fixed"
+ignoring nonexistent directory "/usr/lib/gcc/x86_64-redhat-linux/13/../../../../x86_64-redhat-linux/include"
+#include "..." search starts here:
+#include <...> search starts here:
+ /usr/lib/gcc/x86_64-redhat-linux/13/include
+ /usr/local/include
+ /usr/include
+End of search list.
+Compiler executable checksum: 0c8c33359ba25678021f06b3483d35fc
+COLLECT_GCC_OPTIONS='-fdiagnostics-color=always' '-v' '-o' 'CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_9a889.dir/'
+ as -v --64 -o CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.o /tmp/ccDeba3G.s
+GNU assembler version 2.39 (x86_64-redhat-linux) using BFD version version 2.39-9.fc38
+COMPILER_PATH=/usr/libexec/gcc/x86_64-redhat-linux/13/:/usr/libexec/gcc/x86_64-redhat-linux/13/:/usr/libexec/gcc/x86_64-redhat-linux/:/usr/lib/gcc/x86_64-redhat-linux/13/:/usr/lib/gcc/x86_64-redhat-linux/
+LIBRARY_PATH=/usr/lib/gcc/x86_64-redhat-linux/13/:/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/:/lib/../lib64/:/usr/lib/../lib64/:/usr/lib/gcc/x86_64-redhat-linux/13/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-fdiagnostics-color=always' '-v' '-o' 'CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.'
+[2/2] Linking C executable cmTC_9a889
+Using built-in specs.
+COLLECT_GCC=/usr/bin/cc
+COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-redhat-linux/13/lto-wrapper
+OFFLOAD_TARGET_NAMES=nvptx-none
+OFFLOAD_TARGET_DEFAULT=1
+Target: x86_64-redhat-linux
+Configured with: ../configure --enable-bootstrap --enable-languages=c,c++,fortran,objc,obj-c++,ada,go,d,m2,lto --prefix=/usr --mandir=/usr/share/man --infodir=/usr/share/info --with-bugurl=http://bugzilla.redhat.com/bugzilla --enable-shared --enable-threads=posix --enable-checking=release --enable-multilib --with-system-zlib --enable-__cxa_atexit --disable-libunwind-exceptions --enable-gnu-unique-object --enable-linker-build-id --with-gcc-major-version-only --enable-libstdcxx-backtrace --with-libstdcxx-zoneinfo=/usr/share/zoneinfo --with-linker-hash-style=gnu --enable-plugin --enable-initfini-array --with-isl=/builddir/build/BUILD/gcc-13.1.1-20230614/obj-x86_64-redhat-linux/isl-install --enable-offload-targets=nvptx-none --without-cuda-driver --enable-offload-defaulted --enable-gnu-indirect-function --enable-cet --with-tune=generic --with-arch_32=i686 --build=x86_64-redhat-linux --with-build-config=bootstrap-lto --enable-link-serialization=1
+Thread model: posix
+Supported LTO compression algorithms: zlib zstd
+gcc version 13.1.1 20230614 (Red Hat 13.1.1-4) (GCC) 
+COMPILER_PATH=/usr/libexec/gcc/x86_64-redhat-linux/13/:/usr/libexec/gcc/x86_64-redhat-linux/13/:/usr/libexec/gcc/x86_64-redhat-linux/:/usr/lib/gcc/x86_64-redhat-linux/13/:/usr/lib/gcc/x86_64-redhat-linux/
+LIBRARY_PATH=/usr/lib/gcc/x86_64-redhat-linux/13/:/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/:/lib/../lib64/:/usr/lib/../lib64/:/usr/lib/gcc/x86_64-redhat-linux/13/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_9a889' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_9a889.'
+ /usr/libexec/gcc/x86_64-redhat-linux/13/collect2 -plugin /usr/libexec/gcc/x86_64-redhat-linux/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-redhat-linux/13/lto-wrapper -plugin-opt=-fresolution=/tmp/ccjSW5CS.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --no-add-needed --eh-frame-hdr --hash-style=gnu -m elf_x86_64 -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o cmTC_9a889 /usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crt1.o /usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crti.o /usr/lib/gcc/x86_64-redhat-linux/13/crtbegin.o -L/usr/lib/gcc/x86_64-redhat-linux/13 -L/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64 -L/lib/../lib64 -L/usr/lib/../lib64 -L/usr/lib/gcc/x86_64-redhat-linux/13/../../.. CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-redhat-linux/13/crtend.o /usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crtn.o
+COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_9a889' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_9a889.'
+
+
+
+Parsed C implicit include dir info from above output: rv=done
+  found start of include info
+  found start of implicit include info
+    add: [/usr/lib/gcc/x86_64-redhat-linux/13/include]
+    add: [/usr/local/include]
+    add: [/usr/include]
+  end of search list found
+  collapse include dir [/usr/lib/gcc/x86_64-redhat-linux/13/include] ==> [/usr/lib/gcc/x86_64-redhat-linux/13/include]
+  collapse include dir [/usr/local/include] ==> [/usr/local/include]
+  collapse include dir [/usr/include] ==> [/usr/include]
+  implicit include dirs: [/usr/lib/gcc/x86_64-redhat-linux/13/include;/usr/local/include;/usr/include]
+
+
+Parsed C implicit link information from above output:
+  link line regex: [^( *|.*[/\])(ld|CMAKE_LINK_STARTFILE-NOTFOUND|([^/\]+-)?ld|collect2)[^/\]*( |$)]
+  ignore line: [Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-6yfgqo]
+  ignore line: []
+  ignore line: [Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_9a889 && [1/2] Building C object CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.o]
+  ignore line: [Using built-in specs.]
+  ignore line: [COLLECT_GCC=/usr/bin/cc]
+  ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none]
+  ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+  ignore line: [Target: x86_64-redhat-linux]
+  ignore line: [Configured with: ../configure --enable-bootstrap --enable-languages=c c++ fortran objc obj-c++ ada go d m2 lto --prefix=/usr --mandir=/usr/share/man --infodir=/usr/share/info --with-bugurl=http://bugzilla.redhat.com/bugzilla --enable-shared --enable-threads=posix --enable-checking=release --enable-multilib --with-system-zlib --enable-__cxa_atexit --disable-libunwind-exceptions --enable-gnu-unique-object --enable-linker-build-id --with-gcc-major-version-only --enable-libstdcxx-backtrace --with-libstdcxx-zoneinfo=/usr/share/zoneinfo --with-linker-hash-style=gnu --enable-plugin --enable-initfini-array --with-isl=/builddir/build/BUILD/gcc-13.1.1-20230614/obj-x86_64-redhat-linux/isl-install --enable-offload-targets=nvptx-none --without-cuda-driver --enable-offload-defaulted --enable-gnu-indirect-function --enable-cet --with-tune=generic --with-arch_32=i686 --build=x86_64-redhat-linux --with-build-config=bootstrap-lto --enable-link-serialization=1]
+  ignore line: [Thread model: posix]
+  ignore line: [Supported LTO compression algorithms: zlib zstd]
+  ignore line: [gcc version 13.1.1 20230614 (Red Hat 13.1.1-4) (GCC) ]
+  ignore line: [COLLECT_GCC_OPTIONS='-fdiagnostics-color=always' '-v' '-o' 'CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_9a889.dir/']
+  ignore line: [ /usr/libexec/gcc/x86_64-redhat-linux/13/cc1 -quiet -v /home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/cmake/linux/x64/share/cmake-3.25/Modules/CMakeCCompilerABI.c -quiet -dumpdir CMakeFiles/cmTC_9a889.dir/ -dumpbase CMakeCCompilerABI.c.c -dumpbase-ext .c -mtune=generic -march=x86-64 -version -fdiagnostics-color=always -o /tmp/ccDeba3G.s]
+  ignore line: [GNU C17 (GCC) version 13.1.1 20230614 (Red Hat 13.1.1-4) (x86_64-redhat-linux)]
+  ignore line: [	compiled by GNU C version 13.1.1 20230614 (Red Hat 13.1.1-4)  GMP version 6.2.1  MPFR version 4.1.1-p1  MPC version 1.3.1  isl version isl-0.24-GMP]
+  ignore line: []
+  ignore line: [GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072]
+  ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-redhat-linux/13/include-fixed"]
+  ignore line: [ignoring nonexistent directory "/usr/lib/gcc/x86_64-redhat-linux/13/../../../../x86_64-redhat-linux/include"]
+  ignore line: [#include "..." search starts here:]
+  ignore line: [#include <...> search starts here:]
+  ignore line: [ /usr/lib/gcc/x86_64-redhat-linux/13/include]
+  ignore line: [ /usr/local/include]
+  ignore line: [ /usr/include]
+  ignore line: [End of search list.]
+  ignore line: [Compiler executable checksum: 0c8c33359ba25678021f06b3483d35fc]
+  ignore line: [COLLECT_GCC_OPTIONS='-fdiagnostics-color=always' '-v' '-o' 'CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_9a889.dir/']
+  ignore line: [ as -v --64 -o CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.o /tmp/ccDeba3G.s]
+  ignore line: [GNU assembler version 2.39 (x86_64-redhat-linux) using BFD version version 2.39-9.fc38]
+  ignore line: [COMPILER_PATH=/usr/libexec/gcc/x86_64-redhat-linux/13/:/usr/libexec/gcc/x86_64-redhat-linux/13/:/usr/libexec/gcc/x86_64-redhat-linux/:/usr/lib/gcc/x86_64-redhat-linux/13/:/usr/lib/gcc/x86_64-redhat-linux/]
+  ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-redhat-linux/13/:/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/:/lib/../lib64/:/usr/lib/../lib64/:/usr/lib/gcc/x86_64-redhat-linux/13/../../../:/lib/:/usr/lib/]
+  ignore line: [COLLECT_GCC_OPTIONS='-fdiagnostics-color=always' '-v' '-o' 'CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.o' '-c' '-mtune=generic' '-march=x86-64' '-dumpdir' 'CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.']
+  ignore line: [[2/2] Linking C executable cmTC_9a889]
+  ignore line: [Using built-in specs.]
+  ignore line: [COLLECT_GCC=/usr/bin/cc]
+  ignore line: [COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-redhat-linux/13/lto-wrapper]
+  ignore line: [OFFLOAD_TARGET_NAMES=nvptx-none]
+  ignore line: [OFFLOAD_TARGET_DEFAULT=1]
+  ignore line: [Target: x86_64-redhat-linux]
+  ignore line: [Configured with: ../configure --enable-bootstrap --enable-languages=c c++ fortran objc obj-c++ ada go d m2 lto --prefix=/usr --mandir=/usr/share/man --infodir=/usr/share/info --with-bugurl=http://bugzilla.redhat.com/bugzilla --enable-shared --enable-threads=posix --enable-checking=release --enable-multilib --with-system-zlib --enable-__cxa_atexit --disable-libunwind-exceptions --enable-gnu-unique-object --enable-linker-build-id --with-gcc-major-version-only --enable-libstdcxx-backtrace --with-libstdcxx-zoneinfo=/usr/share/zoneinfo --with-linker-hash-style=gnu --enable-plugin --enable-initfini-array --with-isl=/builddir/build/BUILD/gcc-13.1.1-20230614/obj-x86_64-redhat-linux/isl-install --enable-offload-targets=nvptx-none --without-cuda-driver --enable-offload-defaulted --enable-gnu-indirect-function --enable-cet --with-tune=generic --with-arch_32=i686 --build=x86_64-redhat-linux --with-build-config=bootstrap-lto --enable-link-serialization=1]
+  ignore line: [Thread model: posix]
+  ignore line: [Supported LTO compression algorithms: zlib zstd]
+  ignore line: [gcc version 13.1.1 20230614 (Red Hat 13.1.1-4) (GCC) ]
+  ignore line: [COMPILER_PATH=/usr/libexec/gcc/x86_64-redhat-linux/13/:/usr/libexec/gcc/x86_64-redhat-linux/13/:/usr/libexec/gcc/x86_64-redhat-linux/:/usr/lib/gcc/x86_64-redhat-linux/13/:/usr/lib/gcc/x86_64-redhat-linux/]
+  ignore line: [LIBRARY_PATH=/usr/lib/gcc/x86_64-redhat-linux/13/:/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/:/lib/../lib64/:/usr/lib/../lib64/:/usr/lib/gcc/x86_64-redhat-linux/13/../../../:/lib/:/usr/lib/]
+  ignore line: [COLLECT_GCC_OPTIONS='-v' '-o' 'cmTC_9a889' '-mtune=generic' '-march=x86-64' '-dumpdir' 'cmTC_9a889.']
+  link line: [ /usr/libexec/gcc/x86_64-redhat-linux/13/collect2 -plugin /usr/libexec/gcc/x86_64-redhat-linux/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-redhat-linux/13/lto-wrapper -plugin-opt=-fresolution=/tmp/ccjSW5CS.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --no-add-needed --eh-frame-hdr --hash-style=gnu -m elf_x86_64 -dynamic-linker /lib64/ld-linux-x86-64.so.2 -o cmTC_9a889 /usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crt1.o /usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crti.o /usr/lib/gcc/x86_64-redhat-linux/13/crtbegin.o -L/usr/lib/gcc/x86_64-redhat-linux/13 -L/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64 -L/lib/../lib64 -L/usr/lib/../lib64 -L/usr/lib/gcc/x86_64-redhat-linux/13/../../.. CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-redhat-linux/13/crtend.o /usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crtn.o]
+    arg [/usr/libexec/gcc/x86_64-redhat-linux/13/collect2] ==> ignore
+    arg [-plugin] ==> ignore
+    arg [/usr/libexec/gcc/x86_64-redhat-linux/13/liblto_plugin.so] ==> ignore
+    arg [-plugin-opt=/usr/libexec/gcc/x86_64-redhat-linux/13/lto-wrapper] ==> ignore
+    arg [-plugin-opt=-fresolution=/tmp/ccjSW5CS.res] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [-plugin-opt=-pass-through=-lc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc] ==> ignore
+    arg [-plugin-opt=-pass-through=-lgcc_s] ==> ignore
+    arg [--build-id] ==> ignore
+    arg [--no-add-needed] ==> ignore
+    arg [--eh-frame-hdr] ==> ignore
+    arg [--hash-style=gnu] ==> ignore
+    arg [-m] ==> ignore
+    arg [elf_x86_64] ==> ignore
+    arg [-dynamic-linker] ==> ignore
+    arg [/lib64/ld-linux-x86-64.so.2] ==> ignore
+    arg [-o] ==> ignore
+    arg [cmTC_9a889] ==> ignore
+    arg [/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crt1.o] ==> obj [/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crt1.o]
+    arg [/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crti.o] ==> obj [/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crti.o]
+    arg [/usr/lib/gcc/x86_64-redhat-linux/13/crtbegin.o] ==> obj [/usr/lib/gcc/x86_64-redhat-linux/13/crtbegin.o]
+    arg [-L/usr/lib/gcc/x86_64-redhat-linux/13] ==> dir [/usr/lib/gcc/x86_64-redhat-linux/13]
+    arg [-L/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64] ==> dir [/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64]
+    arg [-L/lib/../lib64] ==> dir [/lib/../lib64]
+    arg [-L/usr/lib/../lib64] ==> dir [/usr/lib/../lib64]
+    arg [-L/usr/lib/gcc/x86_64-redhat-linux/13/../../..] ==> dir [/usr/lib/gcc/x86_64-redhat-linux/13/../../..]
+    arg [CMakeFiles/cmTC_9a889.dir/CMakeCCompilerABI.c.o] ==> ignore
+    arg [-lgcc] ==> lib [gcc]
+    arg [--push-state] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [--pop-state] ==> ignore
+    arg [-lc] ==> lib [c]
+    arg [-lgcc] ==> lib [gcc]
+    arg [--push-state] ==> ignore
+    arg [--as-needed] ==> ignore
+    arg [-lgcc_s] ==> lib [gcc_s]
+    arg [--pop-state] ==> ignore
+    arg [/usr/lib/gcc/x86_64-redhat-linux/13/crtend.o] ==> obj [/usr/lib/gcc/x86_64-redhat-linux/13/crtend.o]
+    arg [/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crtn.o] ==> obj [/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crtn.o]
+  collapse obj [/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crt1.o] ==> [/usr/lib64/crt1.o]
+  collapse obj [/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crti.o] ==> [/usr/lib64/crti.o]
+  collapse obj [/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64/crtn.o] ==> [/usr/lib64/crtn.o]
+  collapse library dir [/usr/lib/gcc/x86_64-redhat-linux/13] ==> [/usr/lib/gcc/x86_64-redhat-linux/13]
+  collapse library dir [/usr/lib/gcc/x86_64-redhat-linux/13/../../../../lib64] ==> [/usr/lib64]
+  collapse library dir [/lib/../lib64] ==> [/lib64]
+  collapse library dir [/usr/lib/../lib64] ==> [/usr/lib64]
+  collapse library dir [/usr/lib/gcc/x86_64-redhat-linux/13/../../..] ==> [/usr/lib]
+  implicit libs: [gcc;gcc_s;c;gcc;gcc_s]
+  implicit objs: [/usr/lib64/crt1.o;/usr/lib64/crti.o;/usr/lib/gcc/x86_64-redhat-linux/13/crtbegin.o;/usr/lib/gcc/x86_64-redhat-linux/13/crtend.o;/usr/lib64/crtn.o]
+  implicit dirs: [/usr/lib/gcc/x86_64-redhat-linux/13;/usr/lib64;/lib64;/usr/lib]
+  implicit fwks: []
+
+
+Performing C SOURCE FILE Test HAVE_WDECLARATION_AFTER_STATEMENT succeeded with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-Xx4kyM
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_5504d && [1/2] Building C object CMakeFiles/cmTC_5504d.dir/src.c.o
+[2/2] Linking C executable cmTC_5504d
+
+
+Source file was:
+int main(void) { return 0; }
+
+Performing C SOURCE FILE Test HAVE_WIMPLICIT_FALLTHROUGH succeeded with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-yMMpBn
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_f65a0 && [1/2] Building C object CMakeFiles/cmTC_f65a0.dir/src.c.o
+[2/2] Linking C executable cmTC_f65a0
+
+
+Source file was:
+int main(void) { return 0; }
+
+Performing C SOURCE FILE Test HAVE_WMISSING_FIELD_INITIALIZERS succeeded with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-ToeGWG
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_b329f && [1/2] Building C object CMakeFiles/cmTC_b329f.dir/src.c.o
+[2/2] Linking C executable cmTC_b329f
+
+
+Source file was:
+int main(void) { return 0; }
+
+Performing C SOURCE FILE Test HAVE_WMISSING_PROTOTYPES succeeded with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-f5QIIV
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_bc8a1 && [1/2] Building C object CMakeFiles/cmTC_bc8a1.dir/src.c.o
+[2/2] Linking C executable cmTC_bc8a1
+
+
+Source file was:
+int main(void) { return 0; }
+
+Performing C SOURCE FILE Test HAVE_WPEDANTIC succeeded with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-aNqxCj
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_03e7d && [1/2] Building C object CMakeFiles/cmTC_03e7d.dir/src.c.o
+[2/2] Linking C executable cmTC_03e7d
+
+
+Source file was:
+int main(void) { return 0; }
+
+Performing C SOURCE FILE Test HAVE_WSHADOW succeeded with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-ncUObW
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_87c23 && [1/2] Building C object CMakeFiles/cmTC_87c23.dir/src.c.o
+[2/2] Linking C executable cmTC_87c23
+
+
+Source file was:
+int main(void) { return 0; }
+
+Performing C SOURCE FILE Test HAVE_WSTRICT_PROTOTYPES succeeded with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-q1ZiVp
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_af918 && [1/2] Building C object CMakeFiles/cmTC_af918.dir/src.c.o
+[2/2] Linking C executable cmTC_af918
+
+
+Source file was:
+int main(void) { return 0; }
+
+Performing C SOURCE FILE Test HAVE_WUNDEF succeeded with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-2wq49l
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_86285 && [1/2] Building C object CMakeFiles/cmTC_86285.dir/src.c.o
+[2/2] Linking C executable cmTC_86285
+
+
+Source file was:
+int main(void) { return 0; }
+
+Performing C SOURCE FILE Test HAVE_WVLA succeeded with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-T3EnHT
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_19d4e && [1/2] Building C object CMakeFiles/cmTC_19d4e.dir/src.c.o
+[2/2] Linking C executable cmTC_19d4e
+
+
+Source file was:
+int main(void) { return 0; }
+
+Determining if the clock_gettime exist passed with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-Y8gXzE
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_3b7fc && [1/2] Building C object CMakeFiles/cmTC_3b7fc.dir/CheckSymbolExists.c.o
+[2/2] Linking C executable cmTC_3b7fc
+
+
+File CheckSymbolExists.c:
+/* */
+#include <time.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef clock_gettime
+  return ((int*)(&clock_gettime))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the futimens exist passed with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-H5Dh9V
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_88e52 && [1/2] Building C object CMakeFiles/cmTC_88e52.dir/CheckSymbolExists.c.o
+[2/2] Linking C executable cmTC_88e52
+
+
+File CheckSymbolExists.c:
+/* */
+#include <fcntl.h>
+#include <sys/stat.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef futimens
+  return ((int*)(&futimens))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the posix_fadvise exist passed with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-FuoDbC
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_1c064 && [1/2] Building C object CMakeFiles/cmTC_1c064.dir/CheckSymbolExists.c.o
+[2/2] Linking C executable cmTC_1c064
+
+
+File CheckSymbolExists.c:
+/* */
+#include <fcntl.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef posix_fadvise
+  return ((int*)(&posix_fadvise))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the posix_madvise exist passed with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-RRV1ab
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_b8517 && [1/2] Building C object CMakeFiles/cmTC_b8517.dir/CheckSymbolExists.c.o
+[2/2] Linking C executable cmTC_b8517
+
+
+File CheckSymbolExists.c:
+/* */
+#include <sys/mman.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef posix_madvise
+  return ((int*)(&posix_madvise))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Performing C SOURCE FILE Test HAVE_STAT_NANOSECOND_PRECISION succeeded with the following output:
+Change Dir: /home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/CMakeScratch/TryCompile-XiqGWd
+
+Run Build Command(s):/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja cmTC_1d1e0 && [1/2] Building C object CMakeFiles/cmTC_1d1e0.dir/src.c.o
+[2/2] Linking C executable cmTC_1d1e0
+
+
+Source file was:
+#include <sys/types.h>
+                         #include <sys/stat.h>
+                         int main() { struct stat st; (void)st.st_atim; }
+

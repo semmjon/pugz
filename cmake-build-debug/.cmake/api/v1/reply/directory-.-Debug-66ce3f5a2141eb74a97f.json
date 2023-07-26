@@ -1,0 +1,152 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : 
+		[
+			"install"
+		],
+		"files" : 
+		[
+			"CMakeLists.txt"
+		],
+		"nodes" : 
+		[
+			{
+				"file" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 215,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 238,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 249,
+				"parent" : 0
+			},
+			{
+				"command" : 0,
+				"file" : 0,
+				"line" : 262,
+				"parent" : 0
+			}
+		]
+	},
+	"installers" : 
+	[
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "lib64",
+			"paths" : 
+			[
+				"libdeflate.a"
+			],
+			"targetId" : "libdeflate_static::@6890427a1f51a3e7e1df",
+			"targetIndex" : 3,
+			"type" : "target"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "include",
+			"paths" : 
+			[
+				"libdeflate.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "lib64",
+			"paths" : 
+			[
+				"libdeflate.so.0"
+			],
+			"targetId" : "libdeflate_shared::@6890427a1f51a3e7e1df",
+			"targetIndex" : 2,
+			"targetInstallNamelink" : "skip",
+			"type" : "target"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "lib64",
+			"paths" : 
+			[
+				"libdeflate.so"
+			],
+			"targetId" : "libdeflate_shared::@6890427a1f51a3e7e1df",
+			"targetIndex" : 2,
+			"targetInstallNamelink" : "only",
+			"type" : "target"
+		},
+		{
+			"backtrace" : 1,
+			"component" : "Unspecified",
+			"destination" : "include",
+			"paths" : 
+			[
+				"libdeflate.h"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 2,
+			"component" : "Unspecified",
+			"destination" : "lib64/pkgconfig",
+			"paths" : 
+			[
+				"cmake-build-debug/libdeflate.pc"
+			],
+			"type" : "file"
+		},
+		{
+			"backtrace" : 3,
+			"component" : "Unspecified",
+			"destination" : "lib64/cmake/libdeflate",
+			"exportName" : "libdeflate_exported_targets",
+			"exportTargets" : 
+			[
+				{
+					"id" : "libdeflate_static::@6890427a1f51a3e7e1df",
+					"index" : 3
+				},
+				{
+					"id" : "libdeflate_shared::@6890427a1f51a3e7e1df",
+					"index" : 2
+				}
+			],
+			"paths" : 
+			[
+				"CMakeFiles/Export/26c5074bb404353f4529f060fde834e7/libdeflate-targets.cmake"
+			],
+			"type" : "export"
+		},
+		{
+			"backtrace" : 4,
+			"component" : "Unspecified",
+			"destination" : "lib64/cmake/libdeflate",
+			"paths" : 
+			[
+				"cmake-build-debug/libdeflate-config.cmake",
+				"cmake-build-debug/libdeflate-config-version.cmake"
+			],
+			"type" : "file"
+		}
+	],
+	"paths" : 
+	{
+		"build" : ".",
+		"source" : "."
+	}
+}

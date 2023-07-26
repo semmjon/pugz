@@ -1,0 +1,38 @@
+/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/cmake/linux/x64/bin/cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MAKE_PROGRAM=/home/sgeist/.local/share/JetBrains/Toolbox/apps/CLion/ch-0/231.9225.21/bin/ninja/linux/x64/ninja -G Ninja -S /home/sgeist/arbeit/pugz -B /home/sgeist/arbeit/pugz/cmake-build-debug
+-- The C compiler identification is GNU 13.1.1
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Performing Test HAVE_WDECLARATION_AFTER_STATEMENT
+-- Performing Test HAVE_WDECLARATION_AFTER_STATEMENT - Success
+-- Performing Test HAVE_WIMPLICIT_FALLTHROUGH
+-- Performing Test HAVE_WIMPLICIT_FALLTHROUGH - Success
+-- Performing Test HAVE_WMISSING_FIELD_INITIALIZERS
+-- Performing Test HAVE_WMISSING_FIELD_INITIALIZERS - Success
+-- Performing Test HAVE_WMISSING_PROTOTYPES
+-- Performing Test HAVE_WMISSING_PROTOTYPES - Success
+-- Performing Test HAVE_WPEDANTIC
+-- Performing Test HAVE_WPEDANTIC - Success
+-- Performing Test HAVE_WSHADOW
+-- Performing Test HAVE_WSHADOW - Success
+-- Performing Test HAVE_WSTRICT_PROTOTYPES
+-- Performing Test HAVE_WSTRICT_PROTOTYPES - Success
+-- Performing Test HAVE_WUNDEF
+-- Performing Test HAVE_WUNDEF - Success
+-- Performing Test HAVE_WVLA
+-- Performing Test HAVE_WVLA - Success
+-- Looking for clock_gettime
+-- Looking for clock_gettime - found
+-- Looking for futimens
+-- Looking for futimens - found
+-- Looking for posix_fadvise
+-- Looking for posix_fadvise - found
+-- Looking for posix_madvise
+-- Looking for posix_madvise - found
+-- Performing Test HAVE_STAT_NANOSECOND_PRECISION
+-- Performing Test HAVE_STAT_NANOSECOND_PRECISION - Success
+-- Configuring done
+-- Generating done
+-- Build files have been written to: /home/sgeist/arbeit/pugz/cmake-build-debug

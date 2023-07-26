@@ -1,0 +1,16 @@
+/home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/libdeflate_static.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/libdeflate_shared.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/rebuild_cache.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/list_install_components.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/install.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/install/local.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/CMakeFiles/install/strip.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/programs/CMakeFiles/libdeflate_prog_utils.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/programs/CMakeFiles/libdeflate-gzip.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/programs/CMakeFiles/edit_cache.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/programs/CMakeFiles/rebuild_cache.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/programs/CMakeFiles/list_install_components.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/programs/CMakeFiles/install.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/programs/CMakeFiles/install/local.dir
+/home/sgeist/arbeit/pugz/cmake-build-debug/programs/CMakeFiles/install/strip.dir
